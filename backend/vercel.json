@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": "/frontend-v2/assets/$1"
+    },
+    {
+      "source": "/favicon.svg",
+      "destination": "/frontend-v2/favicon.svg"
+    },
+    {
+      "source": "/((?!api|health|assets|favicon.svg).*)",
+      "destination": "/frontend-v2/index.html"
+    }
+  ],
+  "env": {
+    "PYTHONPATH": "backend"
+  }
+}

@@ -1,0 +1,6 @@
+venv/
+node_modules/
+.env
+**/credentials.json
+**/*.pickle
+**/mailpilot.db
