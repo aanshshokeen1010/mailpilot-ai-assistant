@@ -105,6 +105,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    const bootFailsafe = setTimeout(() => {
+      setIsInitializing(false);
+    }, 8000);
+
     // Bug Fix #9: Check for OAuth code FIRST, before health check
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
@@ -120,17 +124,22 @@ export default function App() {
       try {
         const auth = await checkAuth();
         if (auth) {
-          await syncData();
+          setIsInitializing(false);
+          syncData().catch(err => {
+            console.error("Background data sync failed:", err);
+          });
         }
       } catch (err) {
         console.error("Initialization error:", err);
         setIsAuthenticated(false);
       } finally {
         setIsInitializing(false);
+        clearTimeout(bootFailsafe);
       }
     };
     
     init();
+    return () => clearTimeout(bootFailsafe);
   // OAuth bootstrap must run once on page load so the callback is not replayed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -252,7 +261,10 @@ export default function App() {
       sessionStorage.removeItem('mailpilot_verifier');
       showToast('success', "We're in, Boss! Connection Secure. 🚀");
       setIsAuthenticated(true);
-      await syncData();
+      setIsInitializing(false);
+      syncData().catch(err => {
+        console.error("Post-auth data sync failed:", err);
+      });
     } catch (err) {
       showToast('error', err.message || 'Authentication failed.');
       setIsAuthenticated(false);

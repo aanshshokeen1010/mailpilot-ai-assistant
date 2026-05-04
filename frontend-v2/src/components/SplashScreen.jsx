@@ -6,10 +6,15 @@ export default function SplashScreen({ isReady }) {
   const [show, setShow] = useState(true);
 
   useEffect(() => {
+    const maxTimer = setTimeout(() => setShow(false), 9000);
     if (isReady) {
       const timer = setTimeout(() => setShow(false), 1000);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(maxTimer);
+      };
     }
+    return () => clearTimeout(maxTimer);
   }, [isReady]);
 
   return (
