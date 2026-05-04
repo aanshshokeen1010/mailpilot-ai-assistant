@@ -49,7 +49,10 @@ app.include_router(email_router, prefix="/api")
 def _health_payload(request: Request):
     from app.services.gmail_service import TOKEN_PATH
     cookie_auth = bool(request.cookies.get("mailpilot_token"))
-    file_auth = os.path.exists(TOKEN_PATH)
+    # Vercel serverless instances can keep a stale token file in /tmp. That file
+    # is not tied to the current browser, so only cookies should authenticate
+    # production sessions.
+    file_auth = False if os.getenv("VERCEL") == "1" else os.path.exists(TOKEN_PATH)
     return {
         "status": "ok", 
         "authenticated": cookie_auth or file_auth, 

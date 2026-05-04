@@ -6,18 +6,60 @@ import { loadLocalSettings } from '../settingsStorage';
 import { saveTasksCache } from '../cacheStorage';
 
 const formatCategoryLabel = (category) => {
-  return String(category || 'UNCATEGORIZED')
+  return normalizeCategory(category)
     .replace(/_/g, ' ')
     .toLowerCase()
     .replace(/\b\w/g, char => char.toUpperCase());
 };
 
+const CATEGORY_BUCKETS = {
+  CLIENT_REPLY: ['CLIENT', 'CUSTOMER', 'REPLY', 'RESPONSE', 'FOLLOW'],
+  SALES: ['SALE', 'SALES', 'LEAD', 'PROSPECT', 'DEMO', 'OUTREACH'],
+  PRODUCT_UPDATE: ['PRODUCT', 'UPDATE', 'FEATURE', 'RELEASE', 'CHANGELOG'],
+  NEWSLETTER: ['NEWSLETTER', 'DIGEST', 'ROUNDUP', 'BLOG'],
+  RECEIPT: ['RECEIPT', 'INVOICE', 'ORDER', 'PAYMENT', 'PURCHASE'],
+  MEETING: ['MEETING', 'CALENDAR', 'SCHEDULE', 'INVITE', 'CALL'],
+  HIRING: ['HIRING', 'RECRUIT', 'JOB', 'INTERVIEW', 'CANDIDATE'],
+  BILLING: ['BILLING', 'BILL', 'SUBSCRIPTION', 'RENEWAL', 'CHARGE'],
+  LEGAL: ['LEGAL', 'CONTRACT', 'AGREEMENT', 'COMPLIANCE', 'TERMS'],
+  TRAVEL: ['TRAVEL', 'FLIGHT', 'HOTEL', 'BOOKING', 'TRIP'],
+  PERSONAL: ['PERSONAL', 'FAMILY', 'FRIEND'],
+  URGENT_ACTION: ['URGENT', 'ACTION', 'DEADLINE', 'APPROVAL', 'REQUIRED'],
+  SUPPORT: ['SUPPORT', 'TICKET', 'ISSUE', 'BUG', 'HELP']
+};
+
+const GENERIC_CATEGORIES = new Set([
+  'CONCISE_DYNAMIC_CATEGORY',
+  'DYNAMIC_CATEGORY',
+  'CATEGORY',
+  'EMAIL_CATEGORY',
+  'UNCATEGORIZED',
+  'GENERAL',
+  'OTHER',
+  'MISC'
+]);
+
+const normalizeCategory = (category = '', fallbackText = '') => {
+  const raw = String(category || '').toUpperCase().replace(/[^A-Z0-9_ ]+/g, '').trim().replace(/\s+/g, '_');
+  const haystack = `${raw} ${String(fallbackText || '').toUpperCase()}`;
+  if (!raw || GENERIC_CATEGORIES.has(raw)) {
+    for (const [canonical, tokens] of Object.entries(CATEGORY_BUCKETS)) {
+      if (tokens.some(token => haystack.includes(token))) return canonical;
+    }
+    return 'STRATEGIC_FYI';
+  }
+  for (const [canonical, tokens] of Object.entries(CATEGORY_BUCKETS)) {
+    if (raw === canonical || tokens.some(token => raw.includes(token))) return canonical;
+  }
+  return raw;
+};
+
 const isUrgentCategory = (category = '') => {
-  return /ACTION|URGENT|REPLY|CLIENT|DEADLINE|LEGAL|APPROVAL/.test(String(category).toUpperCase());
+  return /ACTION|URGENT|REPLY|CLIENT|DEADLINE|LEGAL|APPROVAL/.test(normalizeCategory(category));
 };
 
 const isLowSignalCategory = (category = '') => {
-  return /NOISE|NEWSLETTER|RECEIPT|PROMO|MARKETING|UPDATE|ALERT/.test(String(category).toUpperCase());
+  return /NOISE|NEWSLETTER|RECEIPT|PROMO|MARKETING|UPDATE|ALERT/.test(normalizeCategory(category));
 };
 
 const getCategoryIcon = (category = '') => {
@@ -226,7 +268,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
         return;
       }
 
-      const initialEmails = rawEmails.map(e => ({ ...e, summary: 'Bureau is scanning context...', isAnalyzing: true }));
+      const initialEmails = rawEmails.map(e => ({ ...e, category: normalizeCategory(e.category, `${e.subject} ${e.sender} ${e.snippet}`), summary: 'Bureau is scanning context...', isAnalyzing: true }));
       setEmails(initialEmails);
       setProgress(20);
       setFetchingStep('Initial Intelligence Triage...');
@@ -265,7 +307,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
     const counts = new Map();
     (emails || []).forEach(email => {
       if (email.isAnalyzing) return;
-      const category = email.category || 'UNCATEGORIZED';
+      const category = normalizeCategory(email.category, `${email.subject} ${email.sender} ${email.snippet}`);
       counts.set(category, (counts.get(category) || 0) + 1);
     });
 
@@ -292,7 +334,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
     );
 
     if (selectedTab !== 'ALL') {
-      list = list.filter(e => (e.category || 'UNCATEGORIZED') === selectedTab);
+      list = list.filter(e => normalizeCategory(e.category, `${e.subject} ${e.sender} ${e.snippet}`) === selectedTab);
     }
 
     return list;

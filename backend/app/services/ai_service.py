@@ -11,7 +11,7 @@ logger = logging.getLogger("mailpilot.ai")
 # Initialize the API Client
 # Initialize the API Client with aggressive timeouts for Serverless environments
 IS_VERCEL = os.environ.get("VERCEL") == "1"
-AI_TIMEOUT = 9.0 if IS_VERCEL else 25.0
+AI_TIMEOUT = 8.0 if IS_VERCEL else 25.0
 
 client = OpenAI(
     api_key=settings.NVIDIA_API_KEY,
@@ -25,6 +25,34 @@ MODELS = {
     "JAMES": "nvidia/nemotron-mini-4b-instruct",
     "DEEP": "nvidia/nemotron-3-super-120b-a12b",
     "COO": "nvidia/nemotron-4-340b-instruct"
+}
+
+CATEGORY_BUCKETS = {
+    "CLIENT_REPLY": ["CLIENT", "CUSTOMER", "REPLY", "RESPONSE", "FOLLOW_UP", "FOLLOWUP"],
+    "SALES": ["SALE", "SALES", "LEAD", "PROSPECT", "DEMO", "OUTREACH", "PARTNERSHIP"],
+    "PRODUCT_UPDATE": ["PRODUCT", "UPDATE", "FEATURE", "RELEASE", "CHANGELOG", "ANNOUNCEMENT"],
+    "NEWSLETTER": ["NEWSLETTER", "DIGEST", "ROUNDUP", "SUBSCRIPTION", "BLOG"],
+    "RECEIPT": ["RECEIPT", "INVOICE", "ORDER", "PAYMENT", "PURCHASE", "TRANSACTION"],
+    "MEETING": ["MEETING", "CALENDAR", "SCHEDULE", "INVITE", "APPOINTMENT", "CALL"],
+    "HIRING": ["HIRING", "RECRUIT", "JOB", "INTERVIEW", "CANDIDATE", "CAREER"],
+    "BILLING": ["BILLING", "BILL", "PLAN", "SUBSCRIPTION", "RENEWAL", "CHARGE"],
+    "LEGAL": ["LEGAL", "CONTRACT", "AGREEMENT", "POLICY", "COMPLIANCE", "TERMS"],
+    "TRAVEL": ["TRAVEL", "FLIGHT", "HOTEL", "BOOKING", "TRIP", "ITINERARY"],
+    "PERSONAL": ["PERSONAL", "FAMILY", "FRIEND"],
+    "URGENT_ACTION": ["URGENT", "ACTION", "DEADLINE", "APPROVAL", "SIGN", "REQUIRED"],
+    "SUPPORT": ["SUPPORT", "TICKET", "ISSUE", "BUG", "HELP", "REQUEST"],
+}
+
+GENERIC_CATEGORIES = {
+    "CONCISE_DYNAMIC_CATEGORY",
+    "DYNAMIC_CATEGORY",
+    "CATEGORY",
+    "EMAIL_CATEGORY",
+    "UNCATEGORIZED",
+    "GENERAL",
+    "OTHER",
+    "MISC",
+    "ERR",
 }
 
 
@@ -85,23 +113,39 @@ async def chat_with_james(message, context_data):
 
 def generate_ai_response(prompt, system_msg=None, temperature=0.1, max_tokens=1000, model_type="FAST"):
     """Generates an AI response using the Bureau tiered engine system."""
-    try:
-        model = MODELS.get(model_type, MODELS["FAST"])
-        messages = []
-        if system_msg:
-            messages.append({"role": "system", "content": system_msg})
-        messages.append({"role": "user", "content": prompt})
-        
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        logger.error(f"AI Bureau Error ({model_type}): {e}")
-        return ""
+    fallback_order = [model_type]
+    if model_type == "COO":
+        fallback_order += ["DEEP", "JAMES", "FAST"]
+    elif model_type == "DEEP":
+        fallback_order += ["JAMES", "FAST"]
+
+    for candidate in dict.fromkeys(fallback_order):
+        try:
+            model = MODELS.get(candidate, MODELS["FAST"])
+            timeout = 9.0 if IS_VERCEL and candidate == "COO" else AI_TIMEOUT
+            scoped_client = client if timeout == AI_TIMEOUT else OpenAI(
+                api_key=settings.NVIDIA_API_KEY,
+                base_url=settings.BASE_URL,
+                timeout=timeout
+            )
+            messages = []
+            if system_msg:
+                messages.append({"role": "system", "content": system_msg})
+            messages.append({"role": "user", "content": prompt})
+            
+            response = scoped_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            content = response.choices[0].message.content
+            if content:
+                return content
+        except Exception as e:
+            logger.error(f"AI Bureau Error ({candidate}): {e}")
+
+    return ""
 
 def extract_json(text):
     """Robustly extracts JSON from AI output, stripping all conversational noise."""
@@ -138,7 +182,14 @@ def extract_json(text):
     except: pass
     return None
 
-def _normalize_category(category):
+def _infer_category_from_text(text):
+    haystack = str(text or "").upper()
+    for canonical, tokens in CATEGORY_BUCKETS.items():
+        if any(token in haystack for token in tokens):
+            return canonical
+    return "STRATEGIC_FYI"
+
+def _normalize_category(category, fallback_text=""):
     value = str(category or "").upper().strip()
     aliases = {
         "ACTION": "ACTION_REQUIRED",
@@ -152,7 +203,15 @@ def _normalize_category(category):
     value = aliases.get(value, value)
     value = re.sub(r"[^A-Z0-9_ ]+", "", value).strip()
     value = re.sub(r"\s+", "_", value)
-    return value[:40] if value else "STRATEGIC_FYI"
+
+    if not value or value in GENERIC_CATEGORIES:
+        return _infer_category_from_text(fallback_text)
+
+    for canonical, tokens in CATEGORY_BUCKETS.items():
+        if value == canonical or any(token in value for token in tokens):
+            return canonical
+
+    return value[:32] if value else "STRATEGIC_FYI"
 
 def _normalize_summary_payload(payload, fallback_text=""):
     if not isinstance(payload, dict):
@@ -165,7 +224,7 @@ def _normalize_summary_payload(payload, fallback_text=""):
 
     return {
         "summary": summary or "Summary unavailable.",
-        "category": _normalize_category(payload.get("category")),
+        "category": _normalize_category(payload.get("category"), f"{summary}\n{fallback_text}"),
         "james_note": james_note[:500],
     }
 
@@ -229,8 +288,8 @@ def summarize_email(email_content, detail_level="medium", retry=False, pos_examp
     worker_system = (
         f"You are James, the AI Intern for the Bureau. "
         f"CRITICAL: Create a useful category for this email based on the actual mailbox content and the Boss's profile.\n"
-        f"Use a concise uppercase snake_case category, for example: CLIENT_REPLY, HIRING, BILLING, MEETING, LEGAL, SALES, NEWSLETTER, RECEIPT, PRODUCT_UPDATE, TRAVEL, PERSONAL, URGENT_ACTION.\n"
-        f"Do not force every email into a fixed category set. Similar emails should share the same category name.\n\n"
+        f"Prefer one of these stable uppercase snake_case categories when it fits: CLIENT_REPLY, SALES, PRODUCT_UPDATE, NEWSLETTER, RECEIPT, MEETING, HIRING, BILLING, LEGAL, TRAVEL, PERSONAL, URGENT_ACTION, SUPPORT, STRATEGIC_FYI.\n"
+        f"Only create a new category when none of those fit. Similar emails must share the same category name.\n\n"
         f"{learning_context}\n\n"
         f"Output valid JSON with double quotes only: {{\"summary\": \"...\", \"category\": \"...\", \"james_note\": \"A witty, specific, and personalized note for the Boss (user) starting with Boss, ...\"}}"
     )
@@ -252,7 +311,7 @@ It should be {length_hint}.
 Humanize the tone, preserve or correct the category, and add your personal note for the boss.
 CRITICAL RULE: The boss (user) owns the email '{user_identifier}'. Check the email signature. If the summary refers to the boss by their actual name in the third-person, rewrite it to use 'You/Your'.
 Return ONLY valid JSON with this exact schema:
-{{"summary": "...", "category": "CONCISE_DYNAMIC_CATEGORY", "james_note": "Boss, ..."}}
+{{"summary": "...", "category": "ONE_STABLE_CATEGORY_FROM_THE_ALLOWED_LIST_OR_A_CLEAR_NEW_BUCKET", "james_note": "Boss, ..."}}
 """
     james_response_text = generate_ai_response(james_prompt, system_msg=JAMES_SYSTEM_PROMPT, model_type="JAMES", max_tokens=500)
     james_final = extract_json(james_response_text)
