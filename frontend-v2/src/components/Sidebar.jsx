@@ -4,6 +4,7 @@ import { LayoutDashboard, Mail, CheckSquare, PenTool, Settings, LogOut, User as 
 import { fetchAPI } from '../api';
 import { toast } from 'react-toastify';
 import Logo from './Logo';
+import { clearMailpilotCaches } from '../cacheStorage';
 
 const navItems = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -43,7 +44,7 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
     }
-  }, [isOpen]);
+  }, [isOpen, onClose]);
 
   const handleReconnect = () => {
     setIsOnline(null);
@@ -55,6 +56,8 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
   const handleLogout = async () => {
     try {
       await fetchAPI('/logout', { method: 'POST' });
+      clearMailpilotCaches({ includeSettings: true });
+      sessionStorage.removeItem('mailpilot_verifier');
       toast.info('Session ended safely.');
       setTimeout(() => window.location.href = '/', 800);
     } catch {

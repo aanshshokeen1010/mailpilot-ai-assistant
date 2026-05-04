@@ -119,6 +119,7 @@ def get_tasks(user_email: str = None):
         db.close()
 
 def mark_task_complete(task_id: int, user_email: str):
+    user_email = (user_email or "").lower().strip()
     with db_write_lock:
         db = SessionLocal()
         try:
@@ -136,6 +137,7 @@ def mark_task_complete(task_id: int, user_email: str):
             db.close()
 
 def delete_task(task_id: int, user_email: str = None):
+    user_email = (user_email or "").lower().strip() if user_email else None
     with db_write_lock:
         db = SessionLocal()
         try:
@@ -172,6 +174,7 @@ def get_setting(user_email: str, key: str, default_value: str = None):
 
 def set_setting(user_email: str, key: str, value: str):
     if not user_email: return
+    user_email = user_email.lower().strip()
     # Invalidate cache on write
     get_setting.cache_clear()
     
@@ -191,6 +194,7 @@ def set_setting(user_email: str, key: str, value: str):
             db.close()
 
 def clear_all_tasks(user_email: str = None):
+    user_email = (user_email or "").lower().strip() if user_email else None
     with db_write_lock:
         db = SessionLocal()
         try:
@@ -210,6 +214,7 @@ from app.models import Feedback
 
 def save_feedback(user_email: str, is_positive: bool, snippet: str, summary: str, item_id: str):
     if not user_email or not snippet: return False
+    user_email = user_email.lower().strip()
     with db_write_lock:
         db = SessionLocal()
         try:
@@ -253,6 +258,7 @@ def get_feedback_examples(user_email: str, limit: int = 5):
 from app.models import TaskFeedback
 
 def save_task_feedback(user_email: str, is_positive: bool, task_id: int):
+    user_email = (user_email or "").lower().strip()
     with db_write_lock:
         db = SessionLocal()
         try:
@@ -301,6 +307,7 @@ def get_task_feedback_examples(user_email: str, limit: int = 5):
 
 def add_style_reference(user_email: str, content: str):
     if not user_email or not content: return
+    user_email = user_email.lower().strip()
     from app.models import StyleReference
     with db_write_lock:
         db = SessionLocal()
@@ -326,6 +333,7 @@ def add_style_reference(user_email: str, content: str):
             db.close()
 
 def get_style_examples(user_email: str, limit: int = 5):
+    user_email = (user_email or "").lower().strip()
     db = SessionLocal()
     try:
         from app.models import StyleReference

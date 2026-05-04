@@ -1,15 +1,46 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Sparkles, Wand2, Trash2, RefreshCw, ChevronRight, User, AlertCircle, Inbox, ShieldCheck, Zap, Layers, BarChart3, Filter, MessageSquare } from 'lucide-react';
 import { fetchAPI } from '../api';
 import { loadLocalSettings } from '../settingsStorage';
+import { saveTasksCache } from '../cacheStorage';
 
-export default function Emails({ emails, setEmails, setTasks, showToast, showReplyModal, setSelectedEmail }) {
+const formatCategoryLabel = (category) => {
+  return String(category || 'UNCATEGORIZED')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, char => char.toUpperCase());
+};
+
+const isUrgentCategory = (category = '') => {
+  return /ACTION|URGENT|REPLY|CLIENT|DEADLINE|LEGAL|APPROVAL/.test(String(category).toUpperCase());
+};
+
+const isLowSignalCategory = (category = '') => {
+  return /NOISE|NEWSLETTER|RECEIPT|PROMO|MARKETING|UPDATE|ALERT/.test(String(category).toUpperCase());
+};
+
+const getCategoryIcon = (category = '') => {
+  if (isUrgentCategory(category)) return AlertCircle;
+  if (isLowSignalCategory(category)) return Filter;
+  return BarChart3;
+};
+
+const getCategoryColor = (category = '') => {
+  if (isUrgentCategory(category)) return 'text-rose-400';
+  if (isLowSignalCategory(category)) return 'text-slate-500';
+  return 'text-primary';
+};
+
+export default function Emails({ emails, setEmails, setTasks, showToast, showReplyModal, setSelectedEmail, autoRefreshMs = 0 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('ALL'); // 'ALL', 'ACTION', 'FYI', 'NOISE'
+  const [activeTab, setActiveTab] = useState('ALL');
   const [isFetching, setIsFetching] = useState(false);
   const [fetchingStep, setFetchingStep] = useState('');
   const [progress, setProgress] = useState(0);
+  const fetchRef = useRef(null);
+  const didAutoFetchRef = useRef(false);
+  const shouldAutoFetchOnMount = !emails || emails.length === 0;
 
   const mergeTasksIntoWorkspace = (incomingTasks = []) => {
     const validTasks = incomingTasks.filter(t => t && t.id);
@@ -19,23 +50,43 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
       const existingIds = new Set(prev.map(t => String(t.id)));
       const newTasks = validTasks.filter(t => !existingIds.has(String(t.id)));
       const nextTasks = [...newTasks, ...prev];
-      localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(nextTasks));
+      saveTasksCache(nextTasks);
       return nextTasks;
     });
   };
 
   // Auto-sync on first load
   useEffect(() => {
-    if (!emails || emails.length === 0) {
-      const timer = setTimeout(handleFetch, 0);
+    if (!didAutoFetchRef.current && shouldAutoFetchOnMount) {
+      didAutoFetchRef.current = true;
+      const timer = setTimeout(() => fetchRef.current?.(), 0);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [shouldAutoFetchOnMount]);
+
+  useEffect(() => {
+    if (!autoRefreshMs) return;
+
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchRef.current?.();
+      }
+    }, autoRefreshMs);
+
+    return () => clearInterval(timer);
+  }, [autoRefreshMs]);
+
+  useEffect(() => {
+    fetchRef.current = handleFetch;
+  });
 
   const analyzeBatch = async (email, forceRetry = false) => {
     try {
       const settings = loadLocalSettings();
       const cacheKey = `mailpilot_summary_${email.id}_${settings.ai_detail_level}_${settings.ai_persona.length}`;
+      if (forceRetry) {
+        localStorage.removeItem(cacheKey);
+      }
       if (!forceRetry) {
         const cached = localStorage.getItem(cacheKey);
         if (cached) {
@@ -60,15 +111,14 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
 
       // Handle Asynchronous Background Analysis (202 Accepted)
       if (result && result.status === 'processing') {
-        console.log(`James: Initiating neural tracking for ${email.id}...`);
-        
         // Poll for completion
+        let pollCount = 0;
         const pollInterval = setInterval(async () => {
           try {
+            pollCount += 1;
             const status = await fetchAPI(`/analyze/status/${email.id}`);
             if (status.status === 'complete') {
               clearInterval(pollInterval);
-              console.log(`James: Neural context stabilized for ${email.id}.`);
               
               const finalResult = status;
               
@@ -88,6 +138,9 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
             } else if (status.status === 'error') {
               clearInterval(pollInterval);
               throw new Error(status.message || 'Background analysis failed');
+            } else if (pollCount >= 24) {
+              clearInterval(pollInterval);
+              throw new Error('Analysis polling timed out');
             }
           } catch (err) {
             clearInterval(pollInterval);
@@ -104,8 +157,6 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
       if (result && result.engine) {
         setFetchingStep(`Reasoning (${result.engine})...`);
       }
-
-      console.log("BUREAU ANALYSIS RESULT:", result);
 
       if (result && !result.error && result.summary) {
         try {
@@ -134,7 +185,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
   };
 
   const triggerResummarize = (email) => {
-    setEmails(prev => prev.map(p => p.id === email.id ? { ...p, isAnalyzing: true, summary: 'Re-evaluating neural context...' } : p));
+    setEmails(prev => prev.map(p => p.id === email.id ? { ...p, isAnalyzing: true, summary: 'Re-evaluating neural context...', category: null } : p));
     analyzeBatch(email, true);
     showToast('info', "Bureau's scanning the neural context again, Boss!");
   };
@@ -209,22 +260,42 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
     }
   }
 
+  const categoryTabs = useMemo(() => {
+    const counts = new Map();
+    (emails || []).forEach(email => {
+      if (email.isAnalyzing) return;
+      const category = email.category || 'UNCATEGORIZED';
+      counts.set(category, (counts.get(category) || 0) + 1);
+    });
+
+    return [
+      { id: 'ALL', label: 'All Intelligence', icon: Layers, count: emails.length, color: 'text-primary' },
+      ...Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([category, count]) => ({
+          id: category,
+          label: formatCategoryLabel(category),
+          icon: getCategoryIcon(category),
+          count,
+          color: getCategoryColor(category)
+        }))
+    ];
+  }, [emails]);
+
+  const selectedTab = categoryTabs.some(tab => tab.id === activeTab) ? activeTab : 'ALL';
+
   const filteredEmails = useMemo(() => {
     let list = (emails || []).filter(e =>
       (e.subject || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (e.sender || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (activeTab === 'ACTION') {
-      list = list.filter(e => e.category === 'ACTION_REQUIRED');
-    } else if (activeTab === 'FYI') {
-      list = list.filter(e => e.category === 'STRATEGIC_FYI');
-    } else if (activeTab === 'NOISE') {
-      list = list.filter(e => e.category && !['ACTION_REQUIRED', 'STRATEGIC_FYI'].includes(e.category));
+    if (selectedTab !== 'ALL') {
+      list = list.filter(e => (e.category || 'UNCATEGORIZED') === selectedTab);
     }
 
     return list;
-  }, [emails, searchTerm, activeTab]);
+  }, [emails, searchTerm, selectedTab]);
 
   const handleArchive = async (threadId, emailId) => {
     if (!threadId) {
@@ -291,20 +362,15 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
 
       {/* Strategic Intelligence Tabs */}
       <div className="flex flex-wrap items-center gap-2 p-2 bg-white/5 border border-white/10 rounded-[28px] max-w-fit">
-        {[
-          { id: 'ALL', label: 'All Intelligence', icon: Layers, count: emails.length },
-          { id: 'ACTION', label: 'Action Required', icon: AlertCircle, count: emails.filter(e => e.category === 'ACTION_REQUIRED').length, color: 'text-rose-400' },
-          { id: 'FYI', label: 'Strategic FYI', icon: BarChart3, count: emails.filter(e => e.category === 'STRATEGIC_FYI').length, color: 'text-primary' },
-          { id: 'NOISE', label: 'Filtered Noise', icon: Filter, count: emails.filter(e => e.category && !['ACTION_REQUIRED', 'STRATEGIC_FYI'].includes(e.category)).length, color: 'text-slate-500' }
-        ].map(tab => (
+        {categoryTabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-3 px-6 py-3.5 rounded-[22px] text-[10px] font-black uppercase tracking-widest transition-all relative ${
-              activeTab === tab.id ? 'text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+              selectedTab === tab.id ? 'text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
             }`}
           >
-            {activeTab === tab.id && (
+            {selectedTab === tab.id && (
               <motion.div 
                 layoutId="activeTab"
                 className="absolute inset-0 bg-primary rounded-[22px] shadow-xl shadow-primary/20"
@@ -312,9 +378,9 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
               />
             )}
             <div className="relative z-10 flex items-center gap-3">
-              <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? 'text-white' : tab.color}`} />
+              <tab.icon className={`w-3.5 h-3.5 ${selectedTab === tab.id ? 'text-white' : tab.color}`} />
               <span>{tab.label}</span>
-              <span className={`ml-1 text-[9px] px-1.5 py-0.5 rounded-md ${activeTab === tab.id ? 'bg-white/20' : 'bg-white/5'}`}>{tab.count}</span>
+              <span className={`ml-1 text-[9px] px-1.5 py-0.5 rounded-md ${selectedTab === tab.id ? 'bg-white/20' : 'bg-white/5'}`}>{tab.count}</span>
             </div>
           </button>
         ))}
@@ -396,12 +462,12 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
                     </div>
 
                     <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border self-start ${
-                      email.category === 'ACTION_REQUIRED' ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 
+                      isUrgentCategory(email.category) ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' : 
                       email.category === 'ERR' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 
-                      email.category === 'FILTERED_NOISE' ? 'bg-slate-500/10 text-slate-500 border-white/5' :
+                      isLowSignalCategory(email.category) ? 'bg-slate-500/10 text-slate-500 border-white/5' :
                       'bg-primary/10 text-primary border-primary/20'
                     }`}>
-                       {email.isAnalyzing ? 'Analyzing Persona...' : (email.category === 'FILTERED_NOISE' ? 'Noise Suppressed' : (email.category || 'Strategic FYI'))}
+                       {email.isAnalyzing ? 'Analyzing Persona...' : formatCategoryLabel(email.category || 'UNCATEGORIZED')}
                     </div>
                   </div>
 

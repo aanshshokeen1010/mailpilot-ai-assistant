@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Wand2, Copy, Loader2, ListTodo, FileText, RotateCcw, MessageSquarePlus, Maximize2, Minimize2, Shield } from 'lucide-react';
 import { fetchAPI } from '../api';
 import { loadLocalSettings } from '../settingsStorage';
+import { saveTasksCache } from '../cacheStorage';
 
-export default function Compose({ showToast }) {
+export default function Compose({ showToast, setTasks }) {
   const [emailText, setEmailText] = useState('');
   const [loadingReply, setLoadingReply] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
@@ -45,7 +46,17 @@ export default function Compose({ showToast }) {
         method: 'POST',
         body: JSON.stringify({ email: emailText })
       });
-      setExtractedTasks(data.tasks || []);
+      const tasks = data.tasks || [];
+      setExtractedTasks(tasks);
+      if (setTasks) {
+        setTasks(prev => {
+          const existing = new Map((prev || []).map(task => [String(task.id ?? task.task), task]));
+          tasks.forEach(task => existing.set(String(task.id ?? task.task), task));
+          const merged = Array.from(existing.values());
+          saveTasksCache(merged);
+          return merged;
+        });
+      }
       showToast('success', 'Tasks identified, Boss. Workspace synchronized.');
     } catch {
       showToast('error', "Extraction logic failed, Boss. Connection fuzzy.");

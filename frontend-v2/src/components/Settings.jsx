@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Zap, Database, Sliders, Cpu, Loader2, Globe, Shield } from 'lucide-react';
 import { fetchAPI } from '../api';
 import { DEFAULT_SETTINGS, loadLocalSettings, mergeServerSettings, saveLocalSettings } from '../settingsStorage';
+import { clearMailpilotCaches, saveTasksCache } from '../cacheStorage';
 
-export default function Settings({ showToast, userEmail }) {
+export default function Settings({ showToast, userEmail, setTasks }) {
   const [formData, setFormData] = useState(() => loadLocalSettings());
   const [saving, setSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
@@ -18,7 +19,7 @@ export default function Settings({ showToast, userEmail }) {
       })
       .catch(() => showToast('error', "Sorry Boss, couldn't load your preferences."))
       .finally(() => setIsSyncing(false));
-  }, []);
+  }, [showToast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -243,6 +244,9 @@ export default function Settings({ showToast, userEmail }) {
           <div className="premium-card p-8 border-rose-500/20 group cursor-pointer" onClick={async () => {
               if (window.confirm('CRITICAL: Are you sure? This will wipe all action items across the dashboard. This cannot be undone.')) {
                 await fetchAPI('/tasks/clear', { method: 'DELETE' });
+                setTasks?.([]);
+                saveTasksCache([]);
+                clearMailpilotCaches();
                 showToast('success', 'Workspace Purged.');
               }
           }}>

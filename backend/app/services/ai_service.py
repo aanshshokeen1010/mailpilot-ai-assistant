@@ -67,7 +67,7 @@ async def chat_with_james(message, context_data):
     
     if is_strategic:
         # ESCALATE TO COO (340B)
-        roadmap = await asyncio.to_thread(generate_ai_response, prompt, COO_SYSTEM_PROMPT, 0.1, 800, "DEEP")
+        roadmap = await asyncio.to_thread(generate_ai_response, prompt, COO_SYSTEM_PROMPT, 0.1, 800, "COO")
         if roadmap:
             return f"[COO ESCALATION ACTIVE]\n\n{roadmap}"
         return "Boss, the COO line is busy right now. I can still help break this into next steps if you try again in a moment."
@@ -138,6 +138,37 @@ def extract_json(text):
     except: pass
     return None
 
+def _normalize_category(category):
+    value = str(category or "").upper().strip()
+    aliases = {
+        "ACTION": "ACTION_REQUIRED",
+        "ACTION REQUIRED": "ACTION_REQUIRED",
+        "FYI": "STRATEGIC_FYI",
+        "STRATEGIC FYI": "STRATEGIC_FYI",
+        "NOISE": "FILTERED_NOISE",
+        "FILTERED NOISE": "FILTERED_NOISE",
+        "ERROR": "ERR",
+    }
+    value = aliases.get(value, value)
+    value = re.sub(r"[^A-Z0-9_ ]+", "", value).strip()
+    value = re.sub(r"\s+", "_", value)
+    return value[:40] if value else "STRATEGIC_FYI"
+
+def _normalize_summary_payload(payload, fallback_text=""):
+    if not isinstance(payload, dict):
+        payload = {}
+
+    summary = str(payload.get("summary") or _clean_summary_text(fallback_text)).strip()
+    james_note = str(payload.get("james_note") or "").strip()
+    if not james_note:
+        james_note = "Boss, I reviewed this one and kept the useful signal up front."
+
+    return {
+        "summary": summary or "Summary unavailable.",
+        "category": _normalize_category(payload.get("category")),
+        "james_note": james_note[:500],
+    }
+
 def _clean_summary_text(raw_text):
     """
     Last-resort cleaner: if the AI leaked its reasoning into the output,
@@ -197,27 +228,18 @@ def summarize_email(email_content, detail_level="medium", retry=False, pos_examp
     # --- PHASE 1: The Fast Engine (Nano 8B) ---
     worker_system = (
         f"You are James, the AI Intern for the Bureau. "
-        f"CRITICAL: Categorize this email into EXACTLY one of these buckets based on the Boss's specific profile and previous feedback.\n"
-        f"1. ACTION_REQUIRED: Needs a reply or specific task.\n"
-        f"2. STRATEGIC_FYI: Important context but no action needed.\n"
-        f"3. FILTERED_NOISE: Newsletters, receipts, or automated alerts.\n\n"
+        f"CRITICAL: Create a useful category for this email based on the actual mailbox content and the Boss's profile.\n"
+        f"Use a concise uppercase snake_case category, for example: CLIENT_REPLY, HIRING, BILLING, MEETING, LEGAL, SALES, NEWSLETTER, RECEIPT, PRODUCT_UPDATE, TRAVEL, PERSONAL, URGENT_ACTION.\n"
+        f"Do not force every email into a fixed category set. Similar emails should share the same category name.\n\n"
         f"{learning_context}\n\n"
-        f"Output JSON format: {{'summary': '...', 'category': '...', 'james_note': 'A witty, specific, and personalized note for the Boss (user) starting with \"Boss, ...\"'}}"
+        f"Output valid JSON with double quotes only: {{\"summary\": \"...\", \"category\": \"...\", \"james_note\": \"A witty, specific, and personalized note for the Boss (user) starting with Boss, ...\"}}"
     )
     worker_prompt = f"James, analyze this for the Boss ({user_identifier}):\n\n{email_content[:2500]}"
     
     raw_text = generate_ai_response(worker_prompt, system_msg=worker_system, model_type="FAST", max_tokens=600)
-    raw_analysis = extract_json(raw_text) or {"summary": _clean_summary_text(raw_text), "category": "STRATEGIC_FYI", "james_note": "Boss, I've triage this one for you. Let me know if you need a deep dive!"}
+    raw_analysis = _normalize_summary_payload(extract_json(raw_text), raw_text)
 
     # --- PHASE 2: James (Mini 4B) Verification ---
-    # TACTICAL OPTIMIZATION: On Vercel Hobby (10s limit), skip Phase 2 to prevent engine timeout.
-    if IS_VERCEL and not retry:
-        return {
-            **raw_analysis,
-            "james_note": raw_analysis.get("james_note", "Boss, triage complete. I'm on standby!"),
-            "was_corrected": False,
-            "engine": "Nano 8B"
-        }
     james_prompt = f"""
 Original Email Content:
 {email_content[:1500]}
@@ -225,20 +247,22 @@ Original Email Content:
 Initial Analyst Summary:
 {json.dumps(raw_analysis)}
 
-James, review this summary. It should be {length_hint}.
-Humanize the tone, add your personal note for the boss.
+James, review this summary. It's too structural and robotic. Rewrite it to be a natural 2-3 sentence executive recap for your Boss.
+It should be {length_hint}. 
+Humanize the tone, preserve or correct the category, and add your personal note for the boss.
 CRITICAL RULE: The boss (user) owns the email '{user_identifier}'. Check the email signature. If the summary refers to the boss by their actual name in the third-person, rewrite it to use 'You/Your'.
+Return ONLY valid JSON with this exact schema:
+{{"summary": "...", "category": "CONCISE_DYNAMIC_CATEGORY", "james_note": "Boss, ..."}}
 """
     james_response_text = generate_ai_response(james_prompt, system_msg=JAMES_SYSTEM_PROMPT, model_type="JAMES", max_tokens=500)
     james_final = extract_json(james_response_text)
     
     if james_final:
-        return {**james_final, "engine": "Mini 4B"}
+        return {**_normalize_summary_payload(james_final, raw_analysis.get("summary", "")), "engine": "Mini 4B"}
     
     # Fallback if James fails
     return {
         **raw_analysis,
-        "james_note": "Everything looks standard here, boss.",
         "was_corrected": False,
         "engine": "Nano 8B"
     }
@@ -262,6 +286,10 @@ def generate_reply(email_content, tone="professional", user_identifier="the user
     )
     deep_prompt = f"Draft a reply to this email:\n\n{email_content[:3000]}"
     raw_draft = generate_ai_response(deep_prompt, system_msg=deep_system, model_type="DEEP", max_tokens=1000)
+    if not raw_draft:
+        raw_draft = generate_ai_response(deep_prompt, system_msg=deep_system, model_type="JAMES", max_tokens=700)
+    if not raw_draft:
+        return "I could not generate a reliable draft from this content. Please add more context and try again."
 
     # Step 2: James polishes the tone
     james_polish_prompt = (
@@ -272,4 +300,5 @@ def generate_reply(email_content, tone="professional", user_identifier="the user
     )
     james_system = f"You are James the intern. Polish the provided email draft to match a {tone} tone. Output ONLY the polished draft text without any conversational preamble."
     
-    return generate_ai_response(james_polish_prompt, system_msg=james_system, model_type="JAMES", max_tokens=1000)
+    polished = generate_ai_response(james_polish_prompt, system_msg=james_system, model_type="JAMES", max_tokens=1000)
+    return polished or raw_draft

@@ -1,16 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Trash2, ListTodo, RefreshCw, Calendar, Loader2, ThumbsUp, ThumbsDown, AlertCircle, TrendingUp, Zap } from 'lucide-react';
 import { fetchAPI } from '../api';
+import { clearMailpilotCaches, saveTasksCache } from '../cacheStorage';
 
 export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
   const [loading, setLoading] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [sortBy, setSortBy] = useState('priority'); // 'priority' or 'newest'
   const [filterPriority] = useState('all'); // 'all', 2, 3, 4, 5
+  const fetchTasksRef = useRef(null);
+  const didInitRef = useRef(false);
 
   // Auto-sync on first load if we don't already have tasks from the session bridge
   useEffect(() => {
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+
     const initTasks = async () => {
       // Fallback to local cache to survive Vercel instance cold-starts
       const cached = localStorage.getItem('mailpilot_tasks_cache');
@@ -30,12 +36,16 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
       
       // Only fetch from server if we are truly empty or need a fresh sync
       if (!currentTasks || currentTasks.length === 0) {
-        handleFetchTasks();
+        fetchTasksRef.current?.();
       }
     };
     
     initTasks();
-  }, []);
+  }, [setTasks, tasks]);
+
+  useEffect(() => {
+    fetchTasksRef.current = handleFetchTasks;
+  });
 
   async function handleFetchTasks() {
     setLoading(true);
@@ -43,7 +53,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
       const data = await fetchAPI('/tasks');
       const nextTasks = data.tasks || [];
       setTasks(nextTasks);
-      localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(nextTasks));
+      saveTasksCache(nextTasks);
     } catch {
       showToast('error', "Sorry Boss, Workspace Sync hit a snag.");
     } finally {
@@ -56,7 +66,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
       await fetchAPI(`/complete-task/${id}`, { method: 'PUT' });
       setTasks(prev => {
         const nextTasks = prev.map(t => t.id === id ? { ...t, completed: true } : t);
-        localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(nextTasks));
+        saveTasksCache(nextTasks);
         return nextTasks;
       });
       showToast('success', 'Got it, Boss! Task secured.');
@@ -70,7 +80,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
       await fetchAPI(`/delete-task/${id}`, { method: 'DELETE' });
       setTasks(prev => {
         const nextTasks = prev.filter(t => t.id !== id);
-        localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(nextTasks));
+        saveTasksCache(nextTasks);
         return nextTasks;
       });
       showToast('info', 'Task expunged, Boss!');
@@ -97,7 +107,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
         const nextTasks = prev.map(t => 
           t.id === task.id ? { ...t, userFeedback: action === 'toggled_off' ? null : feedbackType } : t
         );
-        localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(nextTasks));
+        saveTasksCache(nextTasks);
         return nextTasks;
       });
 
@@ -383,7 +393,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                      <button onClick={async () => {
                         await fetchAPI('/tasks/clear', { method: 'DELETE' });
                         setTasks([]);
-                        localStorage.removeItem('mailpilot_tasks_cache');
+                        clearMailpilotCaches();
                         setConfirmClear(false);
                         showToast('success', 'Workspace Purged, Boss! Clean slate secured.');
                      }} className="bg-rose-500 hover:bg-rose-600 text-white rounded-2xl h-14 flex items-center justify-center font-black uppercase tracking-widest text-xs shadow-lg shadow-rose-500/20 transition-all">Expunge All</button>

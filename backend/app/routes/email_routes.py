@@ -138,11 +138,16 @@ def _get_cookie(request: Request):
     """Get the auth token cookie value."""
     return request.cookies.get("mailpilot_token")
 
+def _cookie_secure():
+    """Use secure cookies in production while allowing local HTTP development."""
+    redirect_uri = os.getenv("GMAIL_REDIRECT_URI", "")
+    return os.getenv("VERCEL") == "1" or redirect_uri.startswith("https://")
+
 def _set_token_cookie(response: Response, creds, user_email=None):
     """Set the auth token as a secure HTTP cookie with optional cached user_email."""
     response.set_cookie(
         key="mailpilot_token", value=creds_to_cookie(creds, user_email),
-        httponly=True, secure=True, samesite="lax",
+        httponly=True, secure=_cookie_secure(), samesite="lax",
         max_age=60*60*24*30, path="/"
     )
 
@@ -225,8 +230,8 @@ async def user_info(request: Request, response: Response):
         service = build("gmail", "v1", credentials=creds)
         info = get_user_info(service)
         if info: 
-            # Force cookie refresh if Google rotated tokens
-            if was_refreshed:
+            # Force cookie refresh if Google rotated tokens or an older cookie lacks user_email.
+            if was_refreshed or not _get_user_email(request):
                 _set_token_cookie(response, creds, info.get('email'))
             return info
         raise HTTPException(status_code=401, detail="User not authenticated")
@@ -376,9 +381,9 @@ COO, give me the master plan to execute this.
     try:
         async with AI_SEMAPHORE:
             roadmap = await asyncio.get_event_loop().run_in_executor(
-                None, generate_ai_response, prompt, COO_SYSTEM_PROMPT, 0.2, 1000, "DEEP"
+                None, generate_ai_response, prompt, COO_SYSTEM_PROMPT, 0.2, 1000, "COO"
             )
-        return {"roadmap": roadmap}
+        return {"roadmap": roadmap or "Boss, I could not get a reliable COO briefing this time. Please try again in a moment."}
     except Exception as e:
         logger.error(f"COO Consultation Error: {e}")
         return {"error": "COO is in a meeting. Please try again later."}
@@ -449,7 +454,7 @@ def logout(response: Response):
     if os.path.exists(TOKEN_PATH):
         try: os.remove(TOKEN_PATH)
         except: pass
-    response.delete_cookie("mailpilot_token", path="/")
+    response.delete_cookie("mailpilot_token", path="/", secure=_cookie_secure(), samesite="lax")
     return {"message": "OK"}
 
 @router.get("/oauth2callback")

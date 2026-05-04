@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Mail, Sparkles, Loader2, AlertCircle, ThumbsUp, ThumbsDown, Zap, ArrowRight, X } from 'lucide-react';
 import { fetchAPI } from './api';
 import { loadLocalSettings, mergeServerSettings, saveLocalSettings } from './settingsStorage';
+import { saveTasksCache } from './cacheStorage';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -34,6 +35,7 @@ export default function App() {
   const [modalReply, setModalReply] = useState('');
   const [modalEmail, setModalEmail] = useState(null);
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   // Bug Fix #9: prevent OAuth race with ref
   const oauthHandled = useRef(false);
@@ -48,6 +50,7 @@ export default function App() {
     setModalEmail(email);
     setIsModalOpen(true);
     setIsGeneratingReply(true);
+    setIsSendingReply(false);
     setModalReply('');
     
     (async () => {
@@ -102,10 +105,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    console.log("INTERNAL BUREAU STATE - TASKS:", tasks);
-  }, [tasks]);
-
-  useEffect(() => {
     // Bug Fix #9: Check for OAuth code FIRST, before health check
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
@@ -132,6 +131,8 @@ export default function App() {
     };
     
     init();
+  // OAuth bootstrap must run once on page load so the callback is not replayed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function syncData() {
@@ -143,7 +144,7 @@ export default function App() {
       ]);
       
       setTasks(taskData.tasks || []);
-      localStorage.setItem('mailpilot_tasks_cache', JSON.stringify(taskData.tasks || []));
+      saveTasksCache(taskData.tasks || []);
       if (userData.email) setUserEmail(userData.email);
       if (userData.messages_total) setMessagesTotal(userData.messages_total);
       if (userData.picture) setUserPicture(userData.picture);
@@ -342,6 +343,20 @@ export default function App() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
+      {activeTab !== 'emails' && (
+        <div className="hidden">
+          <Emails
+            emails={emails}
+            setEmails={setEmails}
+            tasks={tasks}
+            setTasks={setTasks}
+            showToast={showToast}
+            showReplyModal={showReplyModal}
+            setSelectedEmail={setSelectedEmailForRecap}
+            autoRefreshMs={30000}
+          />
+        </div>
+      )}
       
       <main className="flex-1 overflow-y-auto px-6 md:px-12 py-8 md:py-12 relative scrollbar-hide">
         {/* Mobile Header */}
@@ -367,10 +382,10 @@ export default function App() {
               transition={{ duration: 0.4, ease: "circOut" }}
             >
               {activeTab === 'dashboard' && <Dashboard emails={emails} tasks={tasks} navigateTo={setActiveTab} />}
-              {activeTab === 'emails' && <Emails emails={emails} setEmails={setEmails} tasks={tasks} setTasks={setTasks} showToast={showToast} showReplyModal={showReplyModal} setSelectedEmail={setSelectedEmailForRecap} />}
+              {activeTab === 'emails' && <Emails emails={emails} setEmails={setEmails} tasks={tasks} setTasks={setTasks} showToast={showToast} showReplyModal={showReplyModal} setSelectedEmail={setSelectedEmailForRecap} autoRefreshMs={30000} />}
               {activeTab === 'tasks' && <Tasks tasks={tasks} setTasks={setTasks} showToast={showToast} navigateToEmail={viewSourceEmail} />}
-              {activeTab === 'compose' && <Compose showToast={showToast} />}
-              {activeTab === 'settings' && <Settings showToast={showToast} userEmail={userEmail} userName={userName} />}
+              {activeTab === 'compose' && <Compose showToast={showToast} setTasks={setTasks} />}
+              {activeTab === 'settings' && <Settings showToast={showToast} userEmail={userEmail} userName={userName} setTasks={setTasks} />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -518,8 +533,10 @@ export default function App() {
                   />
                 )}
                 <button 
-                  disabled={isGeneratingReply || !modalReply.trim()}
+                  disabled={isGeneratingReply || isSendingReply || !modalReply.trim()}
                   onClick={async () => {
+                    if (isSendingReply) return;
+                    setIsSendingReply(true);
                     showToast('info', 'Dispatching secure response...');
                     try {
                       await fetchAPI('/send-email', { 
@@ -534,11 +551,13 @@ export default function App() {
                       showToast('success', 'Message delivered, Boss. Good luck with that one!');
                     } catch {
                       showToast('error', "Sorry Boss, couldn't get that message through.");
+                    } finally {
+                      setIsSendingReply(false);
                     }
                   }} 
                   className="w-full btn-gradient py-5 text-lg font-black uppercase tracking-widest disabled:opacity-50"
                 >
-                   Confirm & Send
+                   {isSendingReply ? 'Sending...' : 'Confirm & Send'}
                 </button>
               </div>
             </motion.div>

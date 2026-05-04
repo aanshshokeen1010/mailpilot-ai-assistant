@@ -128,7 +128,7 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
                       <div className="flex justify-between items-center mb-1">
                         <span className="font-bold text-slate-100 text-[15px] truncate">{email.subject || '(No Subject)'}</span>
                         <span className="status-badge bg-primary/10 text-primary border-none scale-90 origin-right">
-                          {email.category || 'FYI'}
+                          {email.category || 'STRATEGIC_FYI'}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 line-clamp-1 font-medium">{email.summary}</p>
