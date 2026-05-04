@@ -46,8 +46,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Consolidated API Routes
 app.include_router(email_router, prefix="/api")
 
-@app.get("/health")
-def health(request: Request):
+def _health_payload(request: Request):
     from app.services.gmail_service import TOKEN_PATH
     cookie_auth = bool(request.cookies.get("mailpilot_token"))
     file_auth = os.path.exists(TOKEN_PATH)
@@ -57,6 +56,14 @@ def health(request: Request):
         "version": "1.1.0",
         "db_type": "external" if os.getenv("DATABASE_URL") else "local"
     }
+
+@app.get("/health")
+def health(request: Request):
+    return _health_payload(request)
+
+@app.get("/api/health")
+def api_health(request: Request):
+    return _health_payload(request)
 
 # Unified Frontend Serving
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
