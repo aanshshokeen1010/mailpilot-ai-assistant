@@ -32,7 +32,7 @@ const getCategoryColor = (category = '') => {
   return 'text-primary';
 };
 
-export default function Emails({ emails, setEmails, setTasks, showToast, showReplyModal, setSelectedEmail, autoRefreshMs = 0 }) {
+export default function Emails({ emails, setEmails, setTasks, showToast, onAuthExpired, showReplyModal, setSelectedEmail, autoRefreshMs = 0 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('ALL');
   const [isFetching, setIsFetching] = useState(false);
@@ -214,7 +214,8 @@ export default function Emails({ emails, setEmails, setTasks, showToast, showRep
       const rawData = await fetchAPI('/emails-raw');
       if (rawData.needs_auth) {
         showToast('error', 'Session Revoked.');
-        window.location.reload();
+        onAuthExpired?.();
+        setIsFetching(false);
         return;
       }
 

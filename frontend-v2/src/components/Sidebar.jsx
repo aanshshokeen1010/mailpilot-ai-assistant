@@ -14,7 +14,7 @@ const navItems = [
   { id: 'settings', label: 'Preferences', icon: Settings },
 ];
 
-export default function Sidebar({ currentView, setView, userEmail, userPicture, userName, isOpen, onClose }) {
+export default function Sidebar({ currentView, setView, userEmail, userPicture, userName, isOpen, onClose, onSessionEnded }) {
   const [isOnline, setIsOnline] = useState(null);
   const hasOrg = userEmail && userEmail.split('@')[1]?.toLowerCase() !== 'gmail.com';
 
@@ -59,7 +59,7 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
       clearMailpilotCaches({ includeSettings: true });
       sessionStorage.removeItem('mailpilot_verifier');
       toast.info('Session ended safely.');
-      setTimeout(() => window.location.href = '/', 800);
+      onSessionEnded?.();
     } catch {
       toast.error('Logout sync error.');
     }

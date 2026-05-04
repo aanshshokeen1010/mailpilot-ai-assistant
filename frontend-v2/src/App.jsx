@@ -352,6 +352,7 @@ export default function App() {
         currentView={activeTab} 
         setView={setActiveTab} 
         showToast={showToast} 
+        onSessionEnded={() => setIsAuthenticated(false)}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
       />
@@ -363,6 +364,7 @@ export default function App() {
             tasks={tasks}
             setTasks={setTasks}
             showToast={showToast}
+            onAuthExpired={() => setIsAuthenticated(false)}
             showReplyModal={showReplyModal}
             setSelectedEmail={setSelectedEmailForRecap}
             autoRefreshMs={30000}
@@ -394,7 +396,7 @@ export default function App() {
               transition={{ duration: 0.4, ease: "circOut" }}
             >
               {activeTab === 'dashboard' && <Dashboard emails={emails} tasks={tasks} navigateTo={setActiveTab} />}
-              {activeTab === 'emails' && <Emails emails={emails} setEmails={setEmails} tasks={tasks} setTasks={setTasks} showToast={showToast} showReplyModal={showReplyModal} setSelectedEmail={setSelectedEmailForRecap} autoRefreshMs={30000} />}
+              {activeTab === 'emails' && <Emails emails={emails} setEmails={setEmails} tasks={tasks} setTasks={setTasks} showToast={showToast} onAuthExpired={() => setIsAuthenticated(false)} showReplyModal={showReplyModal} setSelectedEmail={setSelectedEmailForRecap} autoRefreshMs={30000} />}
               {activeTab === 'tasks' && <Tasks tasks={tasks} setTasks={setTasks} showToast={showToast} navigateToEmail={viewSourceEmail} />}
               {activeTab === 'compose' && <Compose showToast={showToast} setTasks={setTasks} />}
               {activeTab === 'settings' && <Settings showToast={showToast} userEmail={userEmail} userName={userName} setTasks={setTasks} />}
