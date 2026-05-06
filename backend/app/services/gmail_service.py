@@ -297,8 +297,11 @@ def get_emails(creds_cookie=None):
 
     service = build('gmail', 'v1', credentials=creds)
     try:
-        limit = int(get_setting(user_email, "fetch_limit", "10"))
-    except: limit = 10
+        limit = int(get_setting(user_email, "fetch_limit", "100"))
+    except: limit = 100
+    
+    # Cap at 100 as per user request for absolute stability
+    limit = min(limit, 100)
     
     priority = get_setting(user_email, "fetch_priority", "all")
     query = "is:unread" if priority == "unread" else "is:important" if priority == "important" else ""

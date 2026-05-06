@@ -298,17 +298,17 @@ export default function Settings({ showToast, userEmail, setTasks, inboxMode, se
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                <div className="space-y-6">
                   <div className="flex justify-between items-end">
-                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Analysis Capacity</label>
+                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Analysis Capacity (Max 100)</label>
                     <span className="text-lg font-black text-white">{formData.fetch_limit} Emails</span>
                   </div>
                   <input 
-                    type="range" min="1" max="200" step="1"
+                    type="range" min="1" max="100" step="1"
                     className="w-full h-2 bg-white/5 rounded-full appearance-none cursor-pointer accent-primary"
                     value={formData.fetch_limit}
-                    onChange={(e) => updateFormData({ fetch_limit: e.target.value })}
+                    onChange={(e) => updateFormData({ fetch_limit: Math.min(100, e.target.value) })}
                   />
                   <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest leading-relaxed">
-                    {parseInt(formData.fetch_limit) > 50 ? '💡 High-volume scanning detected. Professional Mode recommended for triage.' : 'Adjust the number of emails processed per cycle.'}
+                    Standardized at 100 for maximum Bureau stability and high-speed intelligence triage.
                   </p>
                </div>
 
