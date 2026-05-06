@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, CheckSquare, Clock, RefreshCw, Activity, Sparkles, ChevronRight } from 'lucide-react';
+import { Mail, CheckSquare, Clock, RefreshCw, Activity, Sparkles, ChevronRight, Zap, Shield } from 'lucide-react';
 import { fetchAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalRLStatus } from '../reinforcementLearning';
@@ -209,6 +209,7 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
 
           <div className="w-full lg:w-96 space-y-8">
             <div className="premium-card p-8 bg-gradient-to-br from-primary/10 to-transparent border-primary/20 relative overflow-hidden group">
+              <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noiseFilter\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.65\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noiseFilter)\'/%3E%3C/svg%3E')] opacity-[0.02]" />
               <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
                 <Shield className="w-20 h-20 text-primary rotate-12" />
               </div>
