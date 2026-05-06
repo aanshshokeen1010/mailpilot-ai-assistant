@@ -343,11 +343,11 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
   }
 
   return (
-    <div className="space-y-6 pb-32">
+    <div className="space-y-6 pb-12">
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">Elegant <span className="text-gradient">Inbox.</span></h2>
+          <h2 className="text-3xl font-extrabold text-white tracking-tight">Professional <span className="text-gradient">Inbox.</span></h2>
           <p className="text-slate-400 mt-2 text-lg font-medium">
             {emails.length} threads • {emails.filter(e => e.labels?.includes('UNREAD')).length} unread
           </p>
