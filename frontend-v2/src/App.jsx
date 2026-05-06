@@ -434,32 +434,41 @@ export default function App() {
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
+        initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.4, ease: "circOut" }}
             >
-              {activeTab === 'dashboard' && <Dashboard emails={emails} tasks={tasks} navigateTo={setActiveTab} />}
+              {activeTab === 'dashboard' && <Dashboard emails={emails} tasks={tasks} navigateTo={setActiveTab} isToastVisible={isToastVisible} />}
               {activeTab === 'emails' && (
-                inboxMode === 'professional' || inboxMode === 'elegant' ? (
+                inboxMode === 'bridge' ? (
                   <ProfessionalInbox 
                     emails={emails} 
-                    setEmails={setEmails} 
                     showToast={showToast} 
                     analyzeEmail={handleAnalyzeSingle}
                     analyzingId={analyzingId}
+                    isBridge={true}
+                  />
+                ) : inboxMode === 'professional' ? (
+                  <ProfessionalInbox 
+                    emails={emails} 
+                    showToast={showToast} 
+                    analyzeEmail={handleAnalyzeSingle}
+                    analyzingId={analyzingId}
+                    isBridge={false}
                   />
                 ) : (
                   <Emails 
                     emails={emails} 
                     setEmails={setEmails} 
-                    tasks={tasks} 
                     setTasks={setTasks} 
                     showToast={showToast} 
-                    onAuthExpired={() => setIsAuthenticated(false)} 
-                    showReplyModal={showReplyModal} 
-                    setSelectedEmail={setSelectedEmailForRecap} 
-                    autoRefreshMs={30000} 
+                    onAuthExpired={() => setIsAuthenticated(false)}
+                    showReplyModal={(email) => {
+                      setModalEmail(email);
+                      setIsModalOpen(true);
+                    }}
+                    setSelectedEmail={setSelectedEmailForRecap}
                   />
                 )
               )}

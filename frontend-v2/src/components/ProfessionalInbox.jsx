@@ -324,7 +324,7 @@ function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRe
   );
 }
 
-export default function ProfessionalInbox({ emails, setEmails, showToast, analyzeEmail, analyzingId }) {
+export default function ProfessionalInbox({ emails = [], analyzeEmail, analyzingId, showToast, isBridge = true }) {
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -382,8 +382,11 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
     if (analyzeEmail) await analyzeEmail(email);
   };
 
-  if (selectedEmail) {
-    const live = emails.find(e => e.id === selectedEmail.id) || selectedEmail;
+  const liveSelected = emails.find(e => e.id === selectedEmail?.id);
+
+  // Mode Switching Logic
+  if (selectedEmail && !isBridge) {
+    const live = liveSelected || selectedEmail;
     return (
       <div className="h-[calc(100vh-8rem)] premium-card overflow-hidden">
         <AnimatePresence mode="wait">
@@ -404,7 +407,7 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
     <div className="flex flex-col h-full max-w-full mx-auto space-y-6 pb-2">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-4">
         <div>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">Professional <span className="text-gradient">Inbox.</span></h2>
+          <h2 className="text-3xl font-extrabold text-white tracking-tight">{isBridge ? 'Bridge' : 'Professional'} <span className="text-gradient">Inbox.</span></h2>
           <p className="text-slate-400 mt-2 text-lg font-medium">
             {emails.length} threads • {emails.filter(e => e.labels?.includes('UNREAD')).length} unread
           </p>
@@ -451,10 +454,10 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
         </div>
       </div>
 
-      {/* Split View Container */}
-      <div className="flex-1 flex overflow-hidden premium-card mx-4 mb-4">
-        {/* Left: Email List (The Gmail Side) */}
-        <div className={`flex-1 flex flex-col min-w-0 border-r border-white/5 overflow-hidden`}>
+      {/* Tactical View Container */}
+      <div className={`flex-1 flex overflow-hidden premium-card mx-4 mb-4 ${!isBridge ? 'flex-col' : ''}`}>
+        {/* Email List */}
+        <div className={`flex-1 flex flex-col min-w-0 ${isBridge ? 'border-r border-white/5' : ''} overflow-hidden`}>
           {filtered.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-slate-900/10">
               <Mail className="w-10 h-10 text-slate-800" />
@@ -496,29 +499,31 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
           )}
         </div>
 
-        {/* Right: AI Intelligence Panel (The App Side) */}
-        <AnimatePresence mode="wait">
-          {selectedEmail ? (
-            <EmailPreviewPanel 
-              key={selectedEmail.id}
-              email={liveSelected || selectedEmail}
-              onAnalyze={handleAnalyze}
-              analyzing={analyzingId === selectedEmail.id}
-              showToast={showToast}
-              onClose={() => setSelectedEmail(null)}
-            />
-          ) : (
-            <div className="hidden lg:flex w-full lg:w-[450px] bg-slate-950/20 items-center justify-center p-12 text-center flex-col gap-6">
-               <div className="w-20 h-20 rounded-[2.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-center text-slate-800">
-                  <Mail className="w-10 h-10" />
-               </div>
-               <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600 mb-2">Bridge Protocol Active</p>
-                  <p className="text-sm text-slate-700 font-medium leading-relaxed">Select a thread to initialize AI context extraction and strategic briefing.</p>
-               </div>
-            </div>
-          )}
-        </AnimatePresence>
+        {/* Right Intelligence Panel (Only in Bridge Mode) */}
+        {isBridge && (
+          <AnimatePresence mode="wait">
+            {selectedEmail ? (
+              <EmailPreviewPanel 
+                key={selectedEmail.id}
+                email={liveSelected || selectedEmail}
+                onAnalyze={handleAnalyze}
+                analyzing={analyzingId === selectedEmail.id}
+                showToast={showToast}
+                onClose={() => setSelectedEmail(null)}
+              />
+            ) : (
+              <div className="hidden lg:flex w-full lg:w-[450px] bg-slate-950/20 items-center justify-center p-12 text-center flex-col gap-6">
+                 <div className="w-20 h-20 rounded-[2.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-center text-slate-800">
+                    <Mail className="w-10 h-10" />
+                 </div>
+                 <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600 mb-2">Bridge Protocol Active</p>
+                    <p className="text-sm text-slate-700 font-medium leading-relaxed">Select a thread to initialize AI context extraction and strategic briefing.</p>
+                 </div>
+              </div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
 
       {/* Hover preview tooltip */}

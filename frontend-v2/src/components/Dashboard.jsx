@@ -4,7 +4,7 @@ import { fetchAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalRLStatus } from '../reinforcementLearning';
 
-export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
+export default function Dashboard({ emails = [], tasks = [], navigateTo, isToastVisible }) {
   const [stats, setStats] = useState({
     pending: 0,
     completed: 0,
@@ -89,17 +89,24 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
           <p className="text-slate-400 mt-3 text-lg font-medium">Welcome back — here's what your AI has organized today.</p>
         </div>
         <div className="flex gap-3">
-          <button 
-            onClick={fetchStats}
-            disabled={isSyncing}
-            className="btn-outline px-5 py-3 flex items-center gap-2 group"
-          >
-            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
-            <span className="text-xs font-bold uppercase tracking-widest">Update Stats</span>
-          </button>
-          <div className="px-5 py-3 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-bold uppercase tracking-widest text-slate-400">System Healthy</span>
+          <AnimatePresence>
+            {!isToastVisible && (
+              <motion.button 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                onClick={fetchStats}
+                disabled={isSyncing}
+                className="btn-outline px-4 py-2 flex items-center gap-2 group border-white/10 hover:border-primary/50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Sync</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+          <div className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 flex items-center gap-3">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Live</span>
           </div>
         </div>
       </header>

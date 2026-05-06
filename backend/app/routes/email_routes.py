@@ -497,12 +497,13 @@ async def get_emails_raw(request: Request, response: Response):
             from app.models import SessionLocal, Task, CategoryOverride
             db = SessionLocal()
             try:
-                # Optimized: Fetch all relevant data for this user in bulk
+                # Security Hardening: Ensure user_email is present before querying sensitive data
                 all_tasks = db.query(Task).filter(Task.user_email == user_email, Task.archived == False).all()
                 overrides = {o.item_id: o.category for o in db.query(CategoryOverride).filter(CategoryOverride.user_email == user_email).all()}
 
                 for email in emails:
                     eid = email.get('id')
+                    if not eid: continue
                     
                     # Apply Category Overrides
                     if eid in overrides:
@@ -516,6 +517,8 @@ async def get_emails_raw(request: Request, response: Response):
                             {"id": t.id, "task": t.task_text, "deadline": t.deadline, "priority": t.priority, "completed": t.completed}
                             for t in email_tasks
                         ]
+            except Exception as e:
+                logger.warning(f"Metadata merge partially failed for {user_email}: {e}")
             finally:
                 db.close()
         
