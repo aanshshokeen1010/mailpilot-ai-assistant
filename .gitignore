@@ -8,3 +8,5 @@ __pycache__/
 **/credentials.json
 **/*.pickle
 **/mailpilot.db
+
+.env*.local

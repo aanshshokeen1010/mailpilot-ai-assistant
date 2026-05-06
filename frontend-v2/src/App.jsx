@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Mail, Sparkles, Loader2, AlertCircle, ThumbsUp, ThumbsDown, Zap, ArrowRight, X } from 'lucide-react';
+import { Search, Mail, Sparkles, Loader2, AlertCircle, ThumbsUp, ThumbsDown, Zap, ArrowRight, X, FileSearch, Filter, Shield, Info } from 'lucide-react';
 import { fetchAPI } from './api';
 import { loadLocalSettings, mergeServerSettings, saveLocalSettings } from './settingsStorage';
 import { saveTasksCache } from './cacheStorage';
@@ -17,6 +17,9 @@ import JamesTerminal from './components/JamesTerminal';
 import Sidebar from './components/Sidebar';
 import SplashScreen from './components/SplashScreen';
 import Logo from './components/Logo';
+import LinkedContent from './components/LinkedContent';
+import ProfessionalInbox from './components/ProfessionalInbox';
+import { buildEffectivePersona } from './settingsStorage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -32,10 +35,73 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedEmailForRecap, setSelectedEmailForRecap] = useState(null);
+  const [deepDive, setDeepDive] = useState(null);
+  const [isDeepDiving, setIsDeepDiving] = useState(false);
+  
+  const handleAnalyzeSingle = async (email) => {
+    if (analyzingId) return;
+    setAnalyzingId(email.id);
+    try {
+      const settings = loadLocalSettings();
+      const effectivePersona = buildEffectivePersona(settings);
+      
+      const result = await fetchAPI('/analyze-single', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...email,
+          ai_detail_level: settings.ai_detail_level,
+          ai_persona: effectivePersona
+        })
+      });
+
+      if (result && result.status === 'processing') {
+        const pollInterval = setInterval(async () => {
+          try {
+            const status = await fetchAPI(`/analyze/status/${email.id}`);
+            if (status.status === 'complete' || status.summary) {
+              clearInterval(pollInterval);
+              const finalResult = status.result || status;
+              setEmails(prev => prev.map(p => 
+                p.id === email.id ? { ...p, ...finalResult, isAnalyzing: false } : p
+              ));
+              setAnalyzingId(null);
+            }
+          } catch (err) {
+            clearInterval(pollInterval);
+            setAnalyzingId(null);
+          }
+        }, 2000);
+      } else {
+        setEmails(prev => prev.map(p => 
+          p.id === email.id ? { ...p, ...result, isAnalyzing: false } : p
+        ));
+        setAnalyzingId(null);
+      }
+    } catch (err) {
+      console.error("Analysis failed:", err);
+      setAnalyzingId(null);
+    }
+  };
   const [modalReply, setModalReply] = useState('');
   const [modalEmail, setModalEmail] = useState(null);
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
+
+  // Privacy banner — show once, remember dismissal
+  const [showPrivacyBanner, setShowPrivacyBanner] = useState(() => {
+    return !localStorage.getItem('mailpilot_privacy_acknowledged');
+  });
+
+  // Inbox Mode: 'classic' or 'elegant'
+  const [inboxMode, setInboxMode] = useState(() => {
+    return localStorage.getItem('mailpilot_inbox_mode') || 'classic';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('mailpilot_inbox_mode', inboxMode);
+  }, [inboxMode]);
+
+  const [analyzingId, setAnalyzingId] = useState(null);
 
   // Bug Fix #9: prevent OAuth race with ref
   const oauthHandled = useRef(false);
@@ -101,6 +167,52 @@ export default function App() {
       }
     } catch {
       showToast('error', 'Failed to save feedback.');
+    }
+  };
+
+  const normalizeModalCategory = (category = '') => String(category || '').toUpperCase().replace(/[^A-Z0-9_ ]+/g, '').trim().replace(/\s+/g, '_');
+
+  const handleCategoryOverride = async (email, category) => {
+    const originalCategory = email.originalCategory || (email.category_override ? 'STRATEGIC_FYI' : email.category) || 'STRATEGIC_FYI';
+    const nextCategory = category || originalCategory;
+    const patch = {
+      category: nextCategory,
+      category_override: category || null,
+      originalCategory
+    };
+    setEmails(prev => prev.map(p => p.id === email.id ? { ...p, ...patch } : p));
+    setSelectedEmailForRecap(prev => prev ? { ...prev, ...patch } : prev);
+    try {
+      await fetchAPI('/category-override', {
+        method: 'POST',
+        body: JSON.stringify({ item_id: email.id, category })
+      });
+    } catch {
+      showToast('info', 'Saved locally. Persistent training will sync when backend is reachable.');
+    }
+    showToast(category === 'FILTERED_NOISE' ? 'info' : category === 'URGENT_ACTION' ? 'success' : 'info',
+      category === 'FILTERED_NOISE' ? 'Marked as noise.' : category === 'URGENT_ACTION' ? 'Marked important.' : 'Manual category override removed.');
+  };
+
+  const handleDeepDive = async (email) => {
+    setIsDeepDiving(true);
+    setDeepDive({ email, analysis: 'Deep-dive analysis is assembling...', attachments: [] });
+    try {
+      const data = await fetchAPI('/deep-dive', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: email.id,
+          threadId: email.threadId,
+          subject: email.subject,
+          sender: email.sender,
+          snippet: email.snippet
+        })
+      });
+      setDeepDive({ email, analysis: data.analysis, attachments: data.attachments || [] });
+    } catch (err) {
+      setDeepDive({ email, analysis: err.message || 'Deep dive failed.', attachments: [] });
+    } finally {
+      setIsDeepDiving(false);
     }
   };
 
@@ -209,17 +321,31 @@ export default function App() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  const viewSourceEmail = (messageId) => {
+  const viewSourceEmail = async (messageId) => {
     if (!messageId) {
       showToast('info', "Boss, this task was manually generated or its source is untraceable.");
       return;
     }
-    const email = emails.find(e => e.id === messageId);
-    if (email) {
+    
+    let email = emails.find(e => e.id === messageId);
+    
+    // If email is not in the active state, try to fetch it or switch tabs and hope the mount-fetch finds it
+    if (!email) {
+      showToast('info', "Locating source communication in the Bureau archives...");
+      setActiveTab('emails');
+      
+      // Give the Emails component a moment to mount and potentially fetch
+      setTimeout(() => {
+        const found = emails.find(e => e.id === messageId);
+        if (found) {
+          setSelectedEmailForRecap(found);
+        } else {
+          showToast('info', "The source email is currently outside the active scan window. Try refreshing the inbox.");
+        }
+      }, 1000);
+    } else {
       setActiveTab('emails');
       setSelectedEmailForRecap(email);
-    } else {
-      showToast('info', "Sorry Boss, that email is no longer in the active Bureau scan.");
     }
   };
 
@@ -355,6 +481,8 @@ export default function App() {
         onSessionEnded={() => setIsAuthenticated(false)}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        inboxMode={inboxMode}
+        setInboxMode={setInboxMode}
       />
       {activeTab !== 'emails' && (
         <div className="hidden">
@@ -386,7 +514,7 @@ export default function App() {
               <Search className="w-5 h-5" />
            </button>
         </div>
-        <div className="max-w-full mx-auto pb-32">
+        <div className="max-w-full mx-auto pb-12">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -396,10 +524,32 @@ export default function App() {
               transition={{ duration: 0.4, ease: "circOut" }}
             >
               {activeTab === 'dashboard' && <Dashboard emails={emails} tasks={tasks} navigateTo={setActiveTab} />}
-              {activeTab === 'emails' && <Emails emails={emails} setEmails={setEmails} tasks={tasks} setTasks={setTasks} showToast={showToast} onAuthExpired={() => setIsAuthenticated(false)} showReplyModal={showReplyModal} setSelectedEmail={setSelectedEmailForRecap} autoRefreshMs={30000} />}
+              {activeTab === 'emails' && (
+                inboxMode === 'elegant' ? (
+                  <ProfessionalInbox 
+                    emails={emails} 
+                    setEmails={setEmails} 
+                    showToast={showToast} 
+                    analyzeEmail={handleAnalyzeSingle}
+                    analyzingId={analyzingId}
+                  />
+                ) : (
+                  <Emails 
+                    emails={emails} 
+                    setEmails={setEmails} 
+                    tasks={tasks} 
+                    setTasks={setTasks} 
+                    showToast={showToast} 
+                    onAuthExpired={() => setIsAuthenticated(false)} 
+                    showReplyModal={showReplyModal} 
+                    setSelectedEmail={setSelectedEmailForRecap} 
+                    autoRefreshMs={30000} 
+                  />
+                )
+              )}
               {activeTab === 'tasks' && <Tasks tasks={tasks} setTasks={setTasks} showToast={showToast} navigateToEmail={viewSourceEmail} />}
               {activeTab === 'compose' && <Compose showToast={showToast} setTasks={setTasks} />}
-              {activeTab === 'settings' && <Settings showToast={showToast} userEmail={userEmail} userName={userName} setTasks={setTasks} />}
+              {activeTab === 'settings' && <Settings showToast={showToast} userEmail={userEmail} userName={userName} setTasks={setTasks} inboxMode={inboxMode} setInboxMode={setInboxMode} />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -422,19 +572,19 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.95, y: 40 }}
               className="relative w-full max-w-4xl max-h-[85vh] premium-card flex flex-col shadow-[0_0_100px_rgba(0,0,0,0.5)] border-white/10 overflow-hidden"
             >
-              <div className="p-8 border-b border-white/10 bg-gradient-to-r from-primary/10 to-transparent flex justify-between items-center">
-                <div className="flex items-center gap-4">
+              <div className="p-8 border-b border-white/10 bg-gradient-to-r from-primary/10 to-transparent flex justify-between items-center gap-4">
+                <div className="flex items-center gap-4 min-w-0">
                   <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
                     <Mail className="w-6 h-6" />
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-white truncate max-w-md">{selectedEmailForRecap.subject}</h3>
-                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">{selectedEmailForRecap.sender}</p>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xl font-bold text-white truncate max-w-full">{selectedEmailForRecap.subject}</h3>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1 break-all [overflow-wrap:anywhere]">{selectedEmailForRecap.sender}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedEmailForRecap(null)}
-                  className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 transition-colors"
+                  className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 transition-colors flex-shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -459,9 +609,10 @@ export default function App() {
                       <AlertCircle className="w-4 h-4" />
                       <span>Original Communication</span>
                     </div>
-                    <div className="text-slate-400 leading-relaxed whitespace-pre-wrap font-medium bg-white/[0.02] p-8 rounded-3xl border border-white/5 text-sm">
-                      {selectedEmailForRecap.snippet}
-                    </div>
+                    <LinkedContent
+                      text={selectedEmailForRecap.snippet}
+                      className="text-slate-400 leading-relaxed font-medium bg-white/[0.02] p-8 rounded-3xl border border-white/5 text-sm"
+                    />
                   </div>
                 </div>
               </div>
@@ -484,6 +635,34 @@ export default function App() {
                   >
                     <ThumbsDown className="w-6 h-6" />
                   </button>
+                  <button
+                    onClick={() => handleDeepDive(selectedEmailForRecap)}
+                    className="p-4 rounded-2xl transition-all border bg-cyan-500/10 text-cyan-400 border-cyan-500/20 hover:bg-cyan-500 hover:text-white"
+                    title="Deep Dive"
+                  >
+                    <FileSearch className="w-6 h-6" />
+                  </button>
+                  <button
+                    onClick={() => handleCategoryOverride(selectedEmailForRecap, normalizeModalCategory(selectedEmailForRecap.category) === 'FILTERED_NOISE' ? null : 'FILTERED_NOISE')}
+                    className={`px-4 h-14 rounded-2xl transition-all border text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${
+                      normalizeModalCategory(selectedEmailForRecap.category) === 'FILTERED_NOISE'
+                        ? 'bg-slate-500/20 text-slate-200 border-slate-500/30'
+                        : 'bg-white/5 text-slate-400 border-transparent hover:text-slate-200 hover:bg-white/10'
+                    }`}
+                  >
+                    <Filter className="w-4 h-4" />
+                    {normalizeModalCategory(selectedEmailForRecap.category) === 'FILTERED_NOISE' ? 'Unmark Noise' : 'Mark Noise'}
+                  </button>
+                  <button
+                    onClick={() => handleCategoryOverride(selectedEmailForRecap, normalizeModalCategory(selectedEmailForRecap.category) === 'URGENT_ACTION' && selectedEmailForRecap.category_override ? null : 'URGENT_ACTION')}
+                    className={`px-4 h-14 rounded-2xl transition-all border text-[10px] font-black uppercase tracking-widest ${
+                      normalizeModalCategory(selectedEmailForRecap.category) === 'URGENT_ACTION' && selectedEmailForRecap.category_override
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500 hover:text-white'
+                    }`}
+                  >
+                    {normalizeModalCategory(selectedEmailForRecap.category) === 'URGENT_ACTION' && selectedEmailForRecap.category_override ? 'Remove Important' : 'Important'}
+                  </button>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -499,6 +678,47 @@ export default function App() {
                     Draft Reply
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {deepDive && (
+          <div className="fixed inset-0 z-[10002] flex items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 20 }}
+              className="premium-card w-full max-w-4xl max-h-[85vh] overflow-hidden border-cyan-500/20"
+            >
+              <div className="p-8 border-b border-white/10 flex items-center justify-between bg-cyan-500/10">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.25em] text-cyan-400">Deep-Dive Intelligence</p>
+                  <h3 className="text-2xl font-black text-white truncate mt-2">{deepDive.email.subject || '(No Subject)'}</h3>
+                </div>
+                <button onClick={() => setDeepDive(null)} className="p-3 rounded-xl bg-white/5 text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-8 overflow-y-auto max-h-[calc(85vh-150px)] custom-scrollbar space-y-8">
+                {deepDive.attachments.length > 0 && (
+                  <div className="space-y-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-500">Attachments Detected</p>
+                    <div className="flex flex-wrap gap-2">
+                      {deepDive.attachments.map((a, i) => (
+                        <span key={i} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-300">
+                          {a.filename}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <LinkedContent
+                  text={deepDive.analysis}
+                  className={`leading-relaxed text-slate-300 font-medium ${isDeepDiving ? 'animate-pulse text-slate-500' : ''}`}
+                />
               </div>
             </motion.div>
           </div>
@@ -530,7 +750,9 @@ export default function App() {
               <div className="p-10 space-y-8">
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/10">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Recipient Address</span>
-                  <span className="text-sm font-bold text-primary">{modalEmail?.sender?.match(/<(.+)>/)?.[1] || modalEmail?.sender || 'Unknown'}</span>
+                  <span className="text-sm font-bold text-primary break-all text-right [overflow-wrap:anywhere]">
+                    {modalEmail?.sender?.match(/<(.+)>/)?.[1] || modalEmail?.sender || 'Unknown'}
+                  </span>
                 </div>
                 {isGeneratingReply ? (
                   <div className="w-full h-80 bg-white/[0.02] border border-white/10 rounded-3xl flex items-center justify-center">
@@ -576,6 +798,102 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Privacy & Security Reminder Banner */}
+      <AnimatePresence>
+        {showPrivacyBanner && isAuthenticated && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[10010] flex items-center justify-center p-4 sm:p-8 bg-black/90 backdrop-blur-2xl"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ duration: 0.5, ease: "backOut" }}
+              className="premium-card max-w-2xl w-full overflow-hidden border-emerald-500/20 shadow-[0_0_120px_rgba(16,185,129,0.08)]"
+            >
+              {/* Header */}
+              <div className="p-8 sm:p-10 border-b border-white/10 bg-gradient-to-r from-emerald-500/10 via-transparent to-cyan-500/5 flex items-start justify-between gap-6">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <Shield className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.25em] text-emerald-400">Just a Reminder</p>
+                    <h3 className="text-2xl sm:text-3xl font-black text-white mt-1 tracking-tight">Your Privacy is Sacred</h3>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.setItem('mailpilot_privacy_acknowledged', 'true');
+                    setShowPrivacyBanner(false);
+                  }}
+                  className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-8 sm:p-10 space-y-8">
+                <div className="space-y-6">
+                  <div className="flex items-start gap-4 p-5 rounded-2xl bg-emerald-500/5 border border-emerald-500/10">
+                    <Info className="w-5 h-5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <h4 className="text-sm font-black text-white uppercase tracking-widest mb-2">You can only see YOUR emails</h4>
+                      <p className="text-sm text-slate-400 leading-relaxed font-medium">
+                        MailPilot connects exclusively to <strong className="text-white">your own Google account</strong> via OAuth 2.0. 
+                        It is technically impossible for this app to access, view, or read any other person's emails. 
+                        Each session is isolated to the authenticated user's mailbox only.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <div className="flex items-center gap-2 text-cyan-400">
+                        <Shield className="w-4 h-4" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Zero Cross-Access</span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        No user can see another user's data. OAuth tokens are session-scoped and never shared.
+                      </p>
+                    </div>
+                    <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-3">
+                      <div className="flex items-center gap-2 text-violet-400">
+                        <Sparkles className="w-4 h-4" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">AI Stays Local</span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        AI analysis runs per-session. Your email content is not stored permanently or used to train models.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    localStorage.setItem('mailpilot_privacy_acknowledged', 'true');
+                    setShowPrivacyBanner(false);
+                  }}
+                  className="w-full btn-gradient h-16 rounded-2xl text-sm font-black uppercase tracking-[0.2em] justify-center shadow-2xl shadow-emerald-500/20"
+                  style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)' }}
+                >
+                  <Shield className="w-5 h-5" />
+                  I Understand — Continue to Dashboard
+                </button>
+
+                <p className="text-center text-[10px] text-slate-600 font-bold uppercase tracking-widest">
+                  This notice appears once. You can review our security details anytime in Preferences.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 

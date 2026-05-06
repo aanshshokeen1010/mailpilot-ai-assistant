@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Sparkles, Wand2, Trash2, RefreshCw, ChevronRight, User, AlertCircle, Inbox, ShieldCheck, Zap, Layers, BarChart3, Filter, MessageSquare } from 'lucide-react';
 import { fetchAPI } from '../api';
-import { loadLocalSettings } from '../settingsStorage';
+import { buildEffectivePersona, loadLocalSettings } from '../settingsStorage';
 import { saveTasksCache } from '../cacheStorage';
 
 const formatCategoryLabel = (category) => {
@@ -24,6 +24,9 @@ const CATEGORY_BUCKETS = {
   LEGAL: ['LEGAL', 'CONTRACT', 'AGREEMENT', 'COMPLIANCE', 'TERMS'],
   TRAVEL: ['TRAVEL', 'FLIGHT', 'HOTEL', 'BOOKING', 'TRIP'],
   PERSONAL: ['PERSONAL', 'FAMILY', 'FRIEND'],
+  ASSIGNMENT_UPDATE: ['ASSIGNMENT', 'HOMEWORK', 'SUBMISSION', 'DUE'],
+  QUIZ_NOTICE: ['QUIZ', 'TEST', 'ASSESSMENT'],
+  COURSE_ALERT: ['COURSE', 'CLASS', 'LECTURE', 'SECTION', 'SEMESTER', 'SYLLABUS'],
   URGENT_ACTION: ['URGENT', 'ACTION', 'DEADLINE', 'APPROVAL', 'REQUIRED'],
   SUPPORT: ['SUPPORT', 'TICKET', 'ISSUE', 'BUG', 'HELP']
 };
@@ -38,6 +41,8 @@ const GENERIC_CATEGORIES = new Set([
   'OTHER',
   'MISC'
 ]);
+
+const NOISE_CATEGORY = 'FILTERED_NOISE';
 
 const normalizeCategory = (category = '', fallbackText = '') => {
   const raw = String(category || '').toUpperCase().replace(/[^A-Z0-9_ ]+/g, '').trim().replace(/\s+/g, '_');
@@ -81,6 +86,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
   const [fetchingStep, setFetchingStep] = useState('');
   const [progress, setProgress] = useState(0);
   const fetchRef = useRef(null);
+  const pollIntervalsRef = useRef(new Set());
   const didAutoFetchRef = useRef(false);
   const shouldAutoFetchOnMount = !emails || emails.length === 0;
 
@@ -102,7 +108,12 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
     if (!didAutoFetchRef.current && shouldAutoFetchOnMount) {
       didAutoFetchRef.current = true;
       const timer = setTimeout(() => fetchRef.current?.(), 0);
-      return () => clearTimeout(timer);
+      return () => {
+        clearTimeout(timer);
+        // Cleanup all active poll intervals on unmount
+        pollIntervalsRef.current.forEach(clearInterval);
+        pollIntervalsRef.current.clear();
+      };
     }
   }, [shouldAutoFetchOnMount]);
 
@@ -125,7 +136,8 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
   const analyzeBatch = async (email, forceRetry = false) => {
     try {
       const settings = loadLocalSettings();
-      const cacheKey = `mailpilot_summary_${email.id}_${settings.ai_detail_level}_${settings.ai_persona.length}`;
+      const effectivePersona = buildEffectivePersona(settings);
+      const cacheKey = `mailpilot_summary_${email.id}_${settings.ai_detail_level}_${effectivePersona.length}`;
       if (forceRetry) {
         localStorage.removeItem(cacheKey);
       }
@@ -134,7 +146,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
         if (cached) {
           const result = JSON.parse(cached);
           setEmails(prev => prev.map(p =>
-            p.id === email.id ? { ...p, ...result, isAnalyzing: false } : p
+            p.id === email.id ? { ...p, ...result, category: p.category_override ? p.category : result.category, isAnalyzing: false } : p
           ));
           mergeTasksIntoWorkspace(result.tasks || []);
           return;
@@ -147,7 +159,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
         body: JSON.stringify({
           ...payload,
           ai_detail_level: settings.ai_detail_level,
-          ai_persona: settings.ai_persona
+          ai_persona: effectivePersona
         })
       });
 
@@ -156,18 +168,20 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
         // Poll for completion
         let pollCount = 0;
         const pollInterval = setInterval(async () => {
+          pollIntervalsRef.current.add(pollInterval);
           try {
             pollCount += 1;
             const status = await fetchAPI(`/analyze/status/${email.id}`);
-            if (status.status === 'complete') {
+            if (status.status === 'complete' || status.summary) {
               clearInterval(pollInterval);
               
-              const finalResult = status;
+              const finalResult = status.result || status;
               
               // Cache and update state
               localStorage.setItem(cacheKey, JSON.stringify({
                 summary: finalResult.summary,
-                category: finalResult.category,
+                category: email.category_override ? email.category : finalResult.category,
+                category_override: email.category_override || null,
                 tasks: finalResult.tasks,
                 james_note: finalResult.james_note
               }));
@@ -175,7 +189,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
               mergeTasksIntoWorkspace(finalResult.tasks || []);
               
               setEmails(prev => prev.map(p =>
-                p.id === email.id ? { ...p, ...finalResult, isAnalyzing: false } : p
+                p.id === email.id ? { ...p, ...finalResult, category: p.category_override ? p.category : finalResult.category, isAnalyzing: false } : p
               ));
             } else if (status.status === 'error') {
               clearInterval(pollInterval);
@@ -192,6 +206,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
             ));
           }
         }, 2500); // Poll every 2.5 seconds
+        pollIntervalsRef.current.add(pollInterval);
         
         return; // Polling takes over
       }
@@ -204,7 +219,8 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
         try {
           localStorage.setItem(cacheKey, JSON.stringify({
             summary: result.summary,
-            category: result.category,
+            category: email.category_override ? email.category : result.category,
+            category_override: email.category_override || null,
             tasks: result.tasks,
             james_note: result.james_note
           }));
@@ -217,7 +233,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
       }
 
       setEmails(prev => prev.map(p =>
-        p.id === email.id ? { ...p, ...result, isAnalyzing: false } : p
+        p.id === email.id ? { ...p, ...result, category: p.category_override ? p.category : result.category, isAnalyzing: false } : p
       ));
     } catch {
       setEmails(prev => prev.map(p =>
@@ -310,9 +326,10 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
       const category = normalizeCategory(email.category, `${email.subject} ${email.sender} ${email.snippet}`);
       counts.set(category, (counts.get(category) || 0) + 1);
     });
+    const allCount = (emails || []).filter(email => normalizeCategory(email.category, `${email.subject} ${email.sender} ${email.snippet}`) !== NOISE_CATEGORY).length;
 
     return [
-      { id: 'ALL', label: 'All Intelligence', icon: Layers, count: emails.length, color: 'text-primary' },
+      { id: 'ALL', label: 'All Intelligence', icon: Layers, count: allCount, color: 'text-primary' },
       ...Array.from(counts.entries())
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([category, count]) => ({
@@ -335,6 +352,8 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
 
     if (selectedTab !== 'ALL') {
       list = list.filter(e => normalizeCategory(e.category, `${e.subject} ${e.sender} ${e.snippet}`) === selectedTab);
+    } else {
+      list = list.filter(e => normalizeCategory(e.category, `${e.subject} ${e.sender} ${e.snippet}`) !== NOISE_CATEGORY);
     }
 
     return list;

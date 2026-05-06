@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from sqlalchemy import or_
-from app.models import SessionLocal, Task, Setting, TaskFeedback, db_write_lock
+from app.models import SessionLocal, Task, Setting, TaskFeedback, CategoryOverride, db_write_lock
 
 # Configure logging for production diagnostics
 logging.basicConfig(level=logging.INFO)
@@ -68,11 +68,11 @@ def save_tasks(tasks: list, user_email: str, message_id: str = None, source_snip
                     final_tasks.append({
                         "id": t.id,
                         "task": t.task_text,
-                        "deadline": t.deadline,
-                        "priority": t.priority,
-                        "completed": t.completed,
-                        "message_id": t.message_id
-                    })
+                    "deadline": t.deadline,
+                    "priority": t.priority,
+                    "completed": t.completed,
+                    "message_id": t.message_id
+                })
             return final_tasks
         except Exception as e:
             db.rollback()
@@ -243,8 +243,16 @@ def get_feedback_examples(user_email: str, limit: int = 5):
     if not user_email: return [], []
     db = SessionLocal()
     try:
-        positive = db.query(Feedback).filter(Feedback.user_email == user_email, Feedback.is_positive == True).order_by(Feedback.id.desc()).limit(limit).all()
-        negative = db.query(Feedback).filter(Feedback.user_email == user_email, Feedback.is_positive == False).order_by(Feedback.id.desc()).limit(limit).all()
+        positive = db.query(Feedback).filter(
+            Feedback.user_email == user_email,
+            Feedback.is_positive == True,
+            Feedback.summary.notlike("CATEGORY_OVERRIDE:%")
+        ).order_by(Feedback.id.desc()).limit(limit).all()
+        negative = db.query(Feedback).filter(
+            Feedback.user_email == user_email,
+            Feedback.is_positive == False,
+            Feedback.summary.notlike("CATEGORY_OVERRIDE:%")
+        ).order_by(Feedback.id.desc()).limit(limit).all()
         # Return full context pairs
         pos = [{"input": f.snippet, "output": f.summary} for f in positive]
         neg = [{"input": f.snippet, "output": f.summary} for f in negative]
@@ -252,6 +260,55 @@ def get_feedback_examples(user_email: str, limit: int = 5):
     except Exception as e:
         logger.error(f"Error fetching feedback examples: {e}")
         return [], []
+    finally:
+        db.close()
+
+def save_category_override(user_email: str, item_id: str, category: str = None):
+    if not user_email or not item_id: return False
+    user_email = user_email.lower().strip()
+    with db_write_lock:
+        db = SessionLocal()
+        try:
+            existing = db.query(CategoryOverride).filter(CategoryOverride.user_email == user_email, CategoryOverride.item_id == item_id).first()
+            if not category:
+                if existing:
+                    db.delete(existing)
+                    db.commit()
+                return "cleared"
+
+            if existing:
+                existing.category = category
+            else:
+                db.add(CategoryOverride(user_email=user_email, item_id=item_id, category=category))
+            db.commit()
+            return "saved"
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error saving category override: {e}")
+            return False
+        finally:
+            db.close()
+
+def get_category_overrides(user_email: str):
+    if not user_email: return {}
+    user_email = user_email.lower().strip()
+    db = SessionLocal()
+    try:
+        rows = db.query(Feedback).filter(
+            Feedback.user_email == user_email,
+            Feedback.summary.like("CATEGORY_OVERRIDE:%")
+        ).all()
+        legacy = {
+            row.item_id: row.summary.replace("CATEGORY_OVERRIDE:", "", 1)
+            for row in rows
+        }
+        rows = db.query(CategoryOverride).filter(CategoryOverride.user_email == user_email).all()
+        current = {row.item_id: row.category for row in rows}
+        legacy.update(current)
+        return legacy
+    except Exception as e:
+        logger.error(f"Error fetching category overrides: {e}")
+        return {}
     finally:
         db.close()
 

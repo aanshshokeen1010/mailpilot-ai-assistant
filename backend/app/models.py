@@ -97,6 +97,14 @@ class Feedback(Base):
     summary = Column(String)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
+class CategoryOverride(Base):
+    __tablename__ = "category_overrides"
+    id = Column(Integer, primary_key=True, index=True)
+    user_email = Column(String, index=True)
+    item_id = Column(String, index=True)
+    category = Column(String, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
 class TaskFeedback(Base):
     __tablename__ = "task_feedbacks"
     id = Column(Integer, primary_key=True, index=True)

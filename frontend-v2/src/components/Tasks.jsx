@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, Trash2, ListTodo, RefreshCw, Calendar, Loader2, ThumbsUp, ThumbsDown, AlertCircle, TrendingUp, Zap } from 'lucide-react';
+import { CheckCircle2, Trash2, ListTodo, RefreshCw, Calendar, Loader2, ThumbsUp, ThumbsDown, AlertCircle, TrendingUp, Zap, ChevronDown, X } from 'lucide-react';
 import { fetchAPI } from '../api';
-import { clearMailpilotCaches, saveTasksCache } from '../cacheStorage';
+import { saveTasksCache } from '../cacheStorage';
+import LinkedContent from './LinkedContent';
 
 export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
   const [loading, setLoading] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [sortBy, setSortBy] = useState('priority'); // 'priority' or 'newest'
   const [filterPriority] = useState('all'); // 'all', 2, 3, 4, 5
+  const [expandedGroups, setExpandedGroups] = useState({});
   const fetchTasksRef = useRef(null);
   const didInitRef = useRef(false);
 
@@ -160,6 +162,29 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
       return b.id - a.id;
     });
 
+  const normalizeTaskGroup = (text = '') => String(text)
+    .toLowerCase()
+    .replace(/\b(?:please|kindly|need to|remember to|boss|the|a|an|your|my)\b/g, ' ')
+    .replace(/\b\d{1,2}[:.]\d{2}\s*(?:am|pm)?\b/g, ' ')
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter(word => word.length > 2)
+    .slice(0, 8)
+    .join(' ')
+    .trim();
+
+  const taskGroups = sortedTasks.reduce((groups, task) => {
+    const key = normalizeTaskGroup(task.task) || String(task.id);
+    const existing = groups.find(group => group.key === key);
+    if (existing) existing.tasks.push(task);
+    else groups.push({ key, tasks: [task] });
+    return groups;
+  }, []).map(group => ({
+    ...group,
+    primary: group.tasks.reduce((best, task) => ((task.priority || 0) > (best.priority || 0) ? task : best), group.tasks[0])
+  }));
+
   const getPriorityInfo = (p) => {
     if (p >= 5) return { label: 'CRITICAL', color: 'text-rose-500', bg: 'bg-rose-500/10', border: 'border-rose-500/20' };
     if (p >= 4) return { label: 'HIGH', color: 'text-amber-500', bg: 'bg-amber-500/10', border: 'border-amber-500/20' };
@@ -208,19 +233,22 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
         ) : (
           <div className="grid grid-cols-1 gap-3">
             <AnimatePresence mode="popLayout">
-              {sortedTasks.map((task) => {
+              {taskGroups.map((group) => {
+                const task = group.primary;
                 const prio = getPriorityInfo(task.priority);
                 const isEscalating = consultingTaskId === task.id;
+                const isExpanded = expandedGroups[group.key];
                 
                 return (
                   <motion.div 
                     layout
-                    key={task.id}
+                    key={group.key}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className={`flex items-center gap-6 p-6 rounded-3xl transition-all duration-500 group border relative overflow-hidden ${task.completed ? 'opacity-30 grayscale' : 'hover:bg-white/[0.03] bg-white/[0.01] border-white/5 hover:border-white/10'}`}
+                    className={`rounded-3xl transition-all duration-500 group border relative overflow-hidden ${task.completed ? 'opacity-50 grayscale' : 'hover:bg-white/[0.03] bg-white/[0.01] border-white/5 hover:border-white/10'}`}
                   >
+                    <div className="flex items-center gap-6 p-6">
                     {/* Completion Check */}
                     <button 
                       onClick={() => !task.completed && handleComplete(task.id)}
@@ -254,11 +282,16 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                              View Source Email
                            </button>
                         )}
+                        {group.tasks.length > 1 && (
+                          <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-slate-600">
+                            {group.tasks.length} similar tasks collapsed
+                          </p>
+                        )}
                       </div>
                     </div>
 
                     {/* Feedback & Actions */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-all flex items-center gap-2">
+                    <div className="flex items-center gap-2 opacity-100 transition-all lg:opacity-0 lg:group-hover:opacity-100">
                        {/* Consult COO Button */}
                        <button 
                          onClick={() => handleConsultCOO(task)}
@@ -290,11 +323,49 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                        >
                           <Trash2 className="w-4 h-4" />
                        </button>
+                       {group.tasks.length > 1 && (
+                         <button
+                           onClick={() => setExpandedGroups(prev => ({ ...prev, [group.key]: !prev[group.key] }))}
+                           className="p-3 rounded-xl bg-white/5 text-slate-500 hover:text-primary hover:bg-primary/10 transition-all"
+                           title="Expand similar tasks"
+                         >
+                           <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                         </button>
+                       )}
                     </div>
 
                     {/* Progress Background */}
                     {!task.completed && task.priority >= 4 && (
                        <div className="absolute top-0 right-0 bottom-0 w-1 bg-amber-500/30" />
+                    )}
+                    </div>
+                    {group.tasks.length > 1 && (
+                      <AnimatePresence initial={false}>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden border-t border-white/5 bg-black/20"
+                          >
+                            <div className="p-5 pl-20 space-y-2">
+                              {group.tasks.slice(1).map(extra => (
+                                <div key={extra.id} className="flex items-center justify-between gap-4 rounded-2xl bg-white/[0.03] border border-white/5 px-4 py-3">
+                                  <p className="text-xs font-bold text-slate-400 leading-relaxed">{extra.task}</p>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {extra.message_id && (
+                                      <button onClick={() => navigateToEmail(extra.message_id)} className="text-[9px] font-black uppercase tracking-widest text-primary">Source</button>
+                                    )}
+                                    <button onClick={() => handleDelete(extra.id)} className="p-2 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     )}
                   </motion.div>
                 );
@@ -318,7 +389,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
             onClick={() => setConfirmClear(true)}
             className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 hover:text-rose-500 transition-colors"
          >
-            Purge Workspace
+            Clear Action Items
          </button>
       </footer>
 
@@ -343,7 +414,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                         </div>
                      </div>
                      <button onClick={() => setShowBoardroom(false)} className="p-2 rounded-xl hover:bg-white/10 text-slate-400 transition-all">
-                        <Trash2 className="w-5 h-5" />
+                        <X className="w-5 h-5" />
                      </button>
                   </div>
                   
@@ -357,9 +428,10 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                      
                      <div className="prose prose-invert max-w-none prose-sm">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-6">COO Operational Strategy</p>
-                        <div className="text-slate-300 whitespace-pre-wrap leading-relaxed font-medium">
-                           {boardroomBriefing.roadmap}
-                        </div>
+                        <LinkedContent
+                          text={boardroomBriefing.roadmap}
+                          className="text-slate-300 leading-relaxed font-medium"
+                        />
                      </div>
                   </div>
 
@@ -385,7 +457,7 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                      <AlertCircle className="w-10 h-10" />
                   </div>
                   <div>
-                     <h3 className="text-2xl font-black text-white">Purge Workspace?</h3>
+                     <h3 className="text-2xl font-black text-white">Clear Action Items?</h3>
                      <p className="text-slate-400 mt-4 font-medium">This will permanently expunge all {tasks.length} action items from the Bureau. This action cannot be reversed.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-4 pt-4">
@@ -393,10 +465,10 @@ export default function Tasks({ tasks, setTasks, showToast, navigateToEmail }) {
                      <button onClick={async () => {
                         await fetchAPI('/tasks/clear', { method: 'DELETE' });
                         setTasks([]);
-                        clearMailpilotCaches();
+                        saveTasksCache([]);
                         setConfirmClear(false);
-                        showToast('success', 'Workspace Purged, Boss! Clean slate secured.');
-                     }} className="bg-rose-500 hover:bg-rose-600 text-white rounded-2xl h-14 flex items-center justify-center font-black uppercase tracking-widest text-xs shadow-lg shadow-rose-500/20 transition-all">Expunge All</button>
+                        showToast('success', 'Action items cleared, Boss! Summaries and preferences were left intact.');
+                     }} className="bg-rose-500 hover:bg-rose-600 text-white rounded-2xl h-14 flex items-center justify-center font-black uppercase tracking-widest text-xs shadow-lg shadow-rose-500/20 transition-all">Clear Items</button>
                   </div>
                </motion.div>
             </div>

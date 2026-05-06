@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Mail, CheckSquare, Clock, ChevronRight, RefreshCw, Activity, CheckCircle2 } from 'lucide-react';
+import { Mail, CheckSquare, Clock, ChevronRight, RefreshCw, Activity, CheckCircle2, Sparkles, TrendingUp } from 'lucide-react';
 import { fetchAPI } from '../api';
 import { motion } from 'framer-motion';
 
@@ -11,6 +11,8 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [brief, setBrief] = useState('');
+  const [isBriefing, setIsBriefing] = useState(false);
 
   const fetchStats = async () => {
     setIsSyncing(true);
@@ -35,6 +37,24 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
     const timer = setTimeout(fetchStats, 0);
     return () => clearTimeout(timer);
   }, []); // Only on mount — use manual refresh for updates
+
+  const generateBrief = async () => {
+    setIsBriefing(true);
+    try {
+      const data = await fetchAPI('/morning-brief', {
+        method: 'POST',
+        body: JSON.stringify({
+          emails: emails.slice(0, 8),
+          tasks: tasks.filter(t => !t.completed).slice(0, 8)
+        })
+      });
+      setBrief(data.brief || '');
+    } catch {
+      setBrief('Boss, the brief could not be assembled this time. Refresh the inbox and try again.');
+    } finally {
+      setIsBriefing(false);
+    }
+  };
 
   const cards = [
     { label: 'Emails Analyzed', value: emails.length, icon: Mail, color: 'text-primary', glow: 'shadow-primary/20', bg: 'bg-primary/10' },
@@ -98,6 +118,24 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
           </motion.div>
         ))}
       </div>
+
+      <section className="premium-card p-8 border-primary/10 bg-primary/[0.03]">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+          <div className="space-y-3 max-w-3xl">
+            <div className="flex items-center gap-3 text-primary">
+              <Sparkles className="w-5 h-5" />
+              <p className="text-[10px] font-black uppercase tracking-[0.25em]">Morning Brief</p>
+            </div>
+            <div className="whitespace-pre-wrap text-slate-300 leading-relaxed font-medium">
+              {brief || 'Generate a tactical readout from the latest analyzed mail and open action items.'}
+            </div>
+          </div>
+          <button onClick={generateBrief} disabled={isBriefing} className="btn-gradient px-6 py-4 text-xs font-black uppercase tracking-widest">
+            {isBriefing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
+            Build Brief
+          </button>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Recent Activity */}

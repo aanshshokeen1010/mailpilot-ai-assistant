@@ -24,7 +24,7 @@ logger = logging.getLogger("mailpilot.main")
 # Note: OAUTHLIB_INSECURE_TRANSPORT is now handled in gmail_service.py
 # based on GMAIL_REDIRECT_URI for proper localhost/production detection
 
-app = FastAPI(title="MailPilot AI API", version="1.1.0")
+app = FastAPI(title="MailPilot AI API", version="2.1.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,7 +56,7 @@ def _health_payload(request: Request):
     return {
         "status": "ok", 
         "authenticated": cookie_auth or file_auth, 
-        "version": "1.1.0",
+        "version": "2.1.1",
         "db_type": "external" if os.getenv("DATABASE_URL") else "local"
     }
 

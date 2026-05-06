@@ -20,7 +20,7 @@ export async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${path}`;
   
   // Bug Fix: Adaptive timeout for large email analysis batches
-  const isAnalysis = endpoint.includes('analyze') || endpoint.includes('extract') || endpoint.includes('/coo/');
+  const isAnalysis = endpoint.includes('analyze') || endpoint.includes('extract') || endpoint.includes('/coo/') || endpoint.includes('deep-dive') || endpoint.includes('morning-brief');
   const timeoutMs = isAnalysis ? 300000 : 30000; 
 
   const controller = new AbortController();

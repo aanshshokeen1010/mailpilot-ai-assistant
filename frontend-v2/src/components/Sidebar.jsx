@@ -14,25 +14,49 @@ const navItems = [
   { id: 'settings', label: 'Preferences', icon: Settings },
 ];
 
-export default function Sidebar({ currentView, setView, userEmail, userPicture, userName, isOpen, onClose, onSessionEnded }) {
+export default function Sidebar({ currentView, setView, userEmail, userPicture, userName, isOpen, onClose, onSessionEnded, inboxMode, setInboxMode }) {
   const [isOnline, setIsOnline] = useState(null);
   const hasOrg = userEmail && userEmail.split('@')[1]?.toLowerCase() !== 'gmail.com';
 
   useEffect(() => {
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
     const checkHealth = async () => {
       // PERFORMANCE OPTIMIZATION: Don't ping server if tab is hidden
       if (document.visibilityState !== 'visible') return;
       try {
         const data = await fetchAPI('/health');
-        setIsOnline(data.status === 'ok');
+        const ok = data.status === 'ok';
+        setIsOnline(ok);
+        retryCount = 0; // Reset on success
       } catch {
-        setIsOnline(false);
+        retryCount++;
+        // Only show offline after multiple consecutive failures
+        // This prevents false negatives from serverless cold starts
+        if (retryCount >= MAX_RETRIES) {
+          setIsOnline(false);
+        }
       }
     };
     
     checkHealth();
-    const timer = setInterval(checkHealth, 60000);
-    return () => clearInterval(timer);
+    // Check every 30s for more responsive connectivity status
+    const timer = setInterval(checkHealth, 30000);
+
+    // Also re-check immediately when the tab becomes visible again
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        retryCount = 0;
+        checkHealth();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   useEffect(() => {
@@ -46,11 +70,22 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
     }
   }, [isOpen, onClose]);
 
-  const handleReconnect = () => {
+  const handleReconnect = async () => {
     setIsOnline(null);
-    fetchAPI('/health')
-      .then(d => setIsOnline(d.status === 'ok'))
-      .catch(() => setIsOnline(false));
+    // Retry up to 3 times with 2s delay to handle cold starts
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const d = await fetchAPI('/health');
+        if (d.status === 'ok') {
+          setIsOnline(true);
+          return;
+        }
+      } catch {
+        // Wait before next attempt
+        if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    setIsOnline(false);
   };
 
   const handleLogout = async () => {
@@ -136,10 +171,11 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
         })}
       </nav>
 
+
       <div className="p-6 mt-auto">
         <div className="px-3.5 pt-2 pb-4 rounded-3xl bg-white/[0.03] border border-white/10 space-y-3.5">
           <div className="flex items-start gap-3">
-            <div className={`w-10 h-10 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 border border-white/10 flex items-center justify-center overflow-hidden ${hasOrg ? 'mt-[18px]' : 'mt-1'}`}>
+            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-slate-800 to-slate-700 border border-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
               {userPicture ? (
                 <img src={userPicture} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -164,8 +200,8 @@ export default function Sidebar({ currentView, setView, userEmail, userPicture, 
                 {userName || (userEmail ? userEmail.split('@')[0] : 'Sync Account')}
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <div className={`w-1.5 h-1.5 rounded-full ${isOnline === null ? 'bg-slate-400 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{isOnline === null ? 'Checking' : isOnline ? 'Live' : 'Offline'}</span>
+                <div className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${isOnline === null ? 'bg-amber-400 animate-pulse' : isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className={`text-[10px] font-black uppercase tracking-widest transition-colors duration-300 ${isOnline === null ? 'text-amber-400' : isOnline ? 'text-slate-500' : 'text-rose-400'}`}>{isOnline === null ? 'Connecting' : isOnline ? 'Live' : 'Reconnecting...'}</span>
               </div>
             </div>
           </div>

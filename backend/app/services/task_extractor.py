@@ -2,7 +2,7 @@ import json
 import re
 import hashlib
 from datetime import datetime
-from app.services.ai_service import generate_ai_response
+from app.services.ai_service import generate_ai_response, _persona_mismatch_category
 
 JAMES_TASK_PROMPT = """You are James, the brilliant AI Intern. Your Boss (the user) has just had their emails scanned for tasks by a worker bot.
 Your job is to REVIEW and VERIFY these tasks before the Boss sees them.
@@ -18,7 +18,7 @@ Your output MUST be a strict JSON array of objects.
 DO NOT include any commentary, notes, or explanations outside the JSON array.
 """
 
-def extract_tasks(email_text: str, pos_examples=None, neg_examples=None, retry=False):
+def extract_tasks(email_text: str, pos_examples=None, neg_examples=None, retry=False, user_persona=""):
     """Task Pipeline: fast extraction -> James verification -> normalization."""
     feedback_injection = ""
     if pos_examples:
@@ -79,8 +79,43 @@ Return the verified JSON array now:"""
     )
     verified = extract_json(verified_raw)
     if isinstance(verified, list):
-        return _normalize(verified)
+        return _judge_tasks(email_text, _normalize(verified), user_persona)
 
+    return _judge_tasks(email_text, tasks, user_persona)
+
+def _judge_tasks(email_text: str, tasks: list, user_persona: str = ""):
+    if not tasks or not user_persona:
+        return tasks
+    mismatch = _persona_mismatch_category(email_text, user_persona)
+    if mismatch:
+        return []
+    prompt = f"""You are the Bureau task relevance judge.
+
+Boss profile and filtering rules:
+{user_persona}
+
+Original email:
+{email_text[:2500]}
+
+Candidate tasks:
+{json.dumps(tasks)}
+
+Keep only tasks that the Boss personally needs to act on. Be strict about university roll number, section, semester, course, specialization, and campus.
+Remove tasks meant for other sections/roll numbers/classes/campuses.
+Merge near-duplicate tasks into one precise task.
+Keep real assignment, quiz, course, registration, deadline, reply, payment, or form tasks when they apply to the Boss.
+
+Return ONLY a JSON array with this schema:
+[{{"task":"precise task written naturally for the Boss", "deadline":"YYYY-MM-DD or null", "priority":1-5}}]
+"""
+    from app.services.ai_service import extract_json
+    judged_raw = generate_ai_response(prompt, model_type="JUDGE", max_tokens=650)
+    judged = extract_json(judged_raw)
+    if isinstance(judged, list):
+        normalized = _normalize(judged)
+        if _persona_mismatch_category(email_text, user_persona):
+            return []
+        return normalized
     return tasks
 
 def _fallback_extract(response: str):

@@ -83,7 +83,7 @@ export default function SplashScreen({ isReady }) {
             transition={{ delay: 1.2 }}
             className="absolute bottom-12 flex items-center gap-2 text-slate-600 font-medium text-xs tracking-wide"
           >
-            <span>v1.5.0</span>
+            <span>v2.1.1</span>
             <span className="w-1 h-1 rounded-full bg-slate-800" />
             <span>NVIDIA NeMo Powered</span>
           </motion.div>
