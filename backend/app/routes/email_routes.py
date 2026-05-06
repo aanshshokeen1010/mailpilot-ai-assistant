@@ -484,7 +484,7 @@ async def user_info(request: Request, response: Response):
 # NOTE: /reinforcement-status removed to comply with 'Strictly on User Device' requirement.
 # All alignment telemetry is now computed and stored in the frontend localStorage.
 
-@router.get("/emails-raw")
+@router.get("/emails")
 async def get_emails_raw(request: Request, response: Response):
     try:
         from app.services.gmail_service import get_emails
