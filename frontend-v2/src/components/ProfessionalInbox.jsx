@@ -71,15 +71,17 @@ function HoverPreview({ email, rect }) {
     }
     
     // STRICT: Never overlap the sidebar (sidebar is roughly 288px)
-    const SIDEBAR_WIDTH = 300;
+    const SIDEBAR_WIDTH = 320; // Increased safety margin
     if (left < SIDEBAR_WIDTH) {
-      // If flipping to left hits sidebar, stay on right but trim width or shift
-      left = Math.max(SIDEBAR_WIDTH + 10, rect.right + 16);
+      left = rect.right + 16;
       // If it still doesn't fit on the right, it might be a small screen
       if (left + width > window.innerWidth - padding) {
         left = window.innerWidth - width - padding;
       }
     }
+    
+    // Final check: if we are still hitting the sidebar, force it to the right
+    if (left < SIDEBAR_WIDTH) left = SIDEBAR_WIDTH + 10;
     
     // Stay within vertical bounds
     top = Math.max(padding, Math.min(top, window.innerHeight - height - padding));
@@ -90,10 +92,10 @@ function HoverPreview({ email, rect }) {
   const cat = CATEGORY_STYLES[email.category] || CATEGORY_STYLES.STRATEGIC_FYI;
   return (
     <motion.div
-      initial={{ opacity: 0, x: -10, scale: 0.97 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={{ opacity: 0, x: -10, scale: 0.97 }}
-      transition={{ duration: 0.15 }}
+      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9, y: 10 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
       className="fixed z-[9999] w-[380px] premium-card border-white/10 shadow-[0_30px_80px_rgba(0,0,0,0.6)] overflow-hidden pointer-events-none"
       style={{ top: position.top, left: position.left }}
     >
@@ -222,14 +224,16 @@ function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRe
     <motion.div
       ref={rowRef}
       layoutId={`email-${email.id}`}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       onClick={() => onSelect(email)}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
       className={`group flex items-center gap-4 px-5 py-2 cursor-pointer transition-all duration-200 border-b border-white/[0.03] ${
         isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-white/[0.025] border-l-2 border-l-transparent'
       }`}
-      whileHover={{ x: 2 }}
-      transition={{ duration: 0.15 }}
+      whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.04)' }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
     >
       {/* Category dot */}
       <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 bg-${cat.color}-500 ${isUnread ? 'shadow-[0_0_8px] shadow-' + cat.color + '-500/50' : 'opacity-40'}`} />
@@ -343,9 +347,8 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
   }
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div className="flex flex-col h-full max-w-full mx-auto space-y-6 pb-2">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 px-4">
         <div>
           <h2 className="text-3xl font-extrabold text-white tracking-tight">Professional <span className="text-gradient">Inbox.</span></h2>
           <p className="text-slate-400 mt-2 text-lg font-medium">
@@ -400,7 +403,14 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
       </div>
 
       {/* Email list */}
-      <div className="premium-card overflow-hidden">
+      <motion.div 
+        initial="hidden"
+        animate="visible"
+        variants={{
+          visible: { transition: { staggerChildren: 0.05 } }
+        }}
+        className="premium-card overflow-hidden"
+      >
         {filtered.length === 0 ? (
           <div className="h-64 flex flex-col items-center justify-center gap-4">
             <Mail className="w-10 h-10 text-slate-800" />
@@ -413,7 +423,12 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
             const items = groups[groupName];
             if (!items?.length) return null;
             return (
-              <div key={groupName}>
+              <motion.div 
+                key={groupName}
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
                 <div className="px-5 py-2.5 bg-white/[0.02] border-b border-white/5 flex items-center gap-2">
                   <Clock className="w-3 h-3 text-slate-700" />
                   <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">{groupName}</span>
@@ -430,11 +445,11 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
                     rowRef={el => { if (el) rowRefs.current[email.id] = el; }}
                   />
                 ))}
-              </div>
+              </motion.div>
             );
           })
         )}
-      </div>
+      </motion.div>
 
       {/* Hover preview tooltip */}
       <AnimatePresence>

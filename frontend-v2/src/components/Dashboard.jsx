@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Mail, CheckSquare, Clock, ChevronRight, RefreshCw, Activity, CheckCircle2, Sparkles, TrendingUp } from 'lucide-react';
+import { Mail, CheckSquare, Clock, RefreshCw, Activity, Sparkles, ChevronRight } from 'lucide-react';
 import { fetchAPI } from '../api';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { getLocalRLStatus } from '../reinforcementLearning';
 
 export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
   const [stats, setStats] = useState({
@@ -14,33 +15,44 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
   const [brief, setBrief] = useState('');
   const [isBriefing, setIsBriefing] = useState(false);
 
+  const [rlStatus, setRlStatus] = useState({ alignment: 0, status: 'Initializing...', samples: 0 });
+
   const fetchStats = async () => {
+    // Stats are now derived from props (emails/tasks) for maximum performance
+    setStats({
+      pending: tasks.filter(t => !t.completed).length,
+      completed: tasks.filter(t => t.completed).length,
+      fetchLimit: stats.fetchLimit
+    });
+    
     setIsSyncing(true);
     try {
-      const [statsData, settingsData] = await Promise.all([
-        fetchAPI('/stats'),
-        fetchAPI('/settings')
-      ]);
-      setStats({
-        pending: statsData.pending_tasks,
-        completed: statsData.completed_tasks,
+      const settingsData = await fetchAPI('/settings');
+      setStats(prev => ({
+        ...prev,
         fetchLimit: parseInt(settingsData.fetch_limit, 10) || 10
-      });
+      }));
+      // Strictly on user's device: fetch alignment from localStorage
+      setRlStatus(getLocalRLStatus());
     } catch (err) {
-      console.error(err);
+      console.warn("Unable to fetch settings:", err);
+      setRlStatus(getLocalRLStatus());
     } finally {
       setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    const timer = setTimeout(fetchStats, 0);
-    return () => clearTimeout(timer);
-  }, []); // Only on mount — use manual refresh for updates
+    fetchStats();
+  }, [emails, tasks]); // Update stats whenever data changes
 
   const generateBrief = async () => {
     setIsBriefing(true);
     try {
+      if (emails.length === 0) {
+        setBrief("Boss, your inbox is currently clear of actionable data. I'll prepare a brief once new intelligence arrives.");
+        return;
+      }
       const data = await fetchAPI('/morning-brief', {
         method: 'POST',
         body: JSON.stringify({
@@ -50,7 +62,7 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
       });
       setBrief(data.brief || '');
     } catch {
-      setBrief('Boss, the brief could not be assembled this time. Refresh the inbox and try again.');
+      setBrief('Boss, the brief could not be assembled this time. Please check your connection.');
     } finally {
       setIsBriefing(false);
     }
@@ -60,7 +72,7 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
     { label: 'Emails Analyzed', value: emails.length, icon: Mail, color: 'text-primary', glow: 'shadow-primary/20', bg: 'bg-primary/10' },
     { label: 'Pending Tasks', value: stats.pending, icon: Clock, color: 'text-amber-400', glow: 'shadow-amber-500/20', bg: 'bg-amber-500/10' },
     { label: 'Completed Tasks', value: stats.completed, icon: CheckSquare, color: 'text-emerald-400', glow: 'shadow-emerald-500/20', bg: 'bg-emerald-500/10' },
-    { label: 'Fetch Limit', value: stats.fetchLimit, icon: Activity, color: 'text-accent', glow: 'shadow-accent/20', bg: 'bg-accent/10' },
+    { label: 'Scan Limit', value: stats.fetchLimit, icon: Activity, color: 'text-accent', glow: 'shadow-accent/20', bg: 'bg-accent/10' },
   ];
 
   return (
@@ -93,119 +105,160 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
       </header>
 
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <motion.div 
+        initial="hidden"
+        animate="visible"
+        variants={{
+          visible: { transition: { staggerChildren: 0.1 } }
+        }}
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+      >
         {cards.map((card, i) => (
           <motion.div 
             key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            onClick={() => {
-              if (card.label.includes('Limit')) navigateTo('settings');
-              else navigateTo(card.label.includes('Task') ? 'tasks' : 'emails');
+            variants={{
+              hidden: { opacity: 0, y: 20, scale: 0.95 },
+              visible: { opacity: 1, y: 0, scale: 1 }
             }}
-            className="premium-card p-8 group cursor-pointer hover:translate-y-[-4px]"
+            className="premium-card p-8 group hover:border-primary/50 transition-all duration-500 flex flex-col items-center text-center space-y-4 cursor-pointer"
+            whileHover={{ y: -5, boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}
           >
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className={`w-14 h-14 rounded-2xl ${card.bg} ${card.color} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-500 shadow-2xl ${card.glow}`}>
-                <card.icon className="w-7 h-7" />
-              </div>
-              <div>
-                <div className="text-4xl font-bold text-white mb-2">{card.value}</div>
-                <div className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">{card.label}</div>
-              </div>
+            <div className={`w-14 h-14 rounded-2xl ${card.bg} flex items-center justify-center ${card.color} shadow-lg ${card.glow} group-hover:scale-110 transition-transform`}>
+              <card.icon className="w-7 h-7" />
+            </div>
+            <div>
+               <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">{card.label}</p>
+               <h3 className="text-4xl font-black text-white tracking-tighter">{card.value}</h3>
             </div>
           </motion.div>
         ))}
-      </div>
+      </motion.div>
 
-      <section className="premium-card p-8 border-primary/10 bg-primary/[0.03]">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-          <div className="space-y-3 max-w-3xl">
-            <div className="flex items-center gap-3 text-primary">
-              <Sparkles className="w-5 h-5" />
-              <p className="text-[10px] font-black uppercase tracking-[0.25em]">Morning Brief</p>
+      {/* Intelligence Briefing Section */}
+      <section className="premium-card p-10 md:p-12 relative overflow-hidden border-white/10 shadow-[0_0_80px_rgba(var(--accent-primary-rgb,139,92,246),0.05)]">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.05, 1],
+            opacity: [0.03, 0.05, 0.03]
+          }}
+          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute top-0 right-0 p-12 pointer-events-none"
+        >
+          <Sparkles className="w-64 h-64 text-primary" />
+        </motion.div>
+        
+        <div className="relative z-10 flex flex-col lg:flex-row gap-12 items-start">
+          <div className="flex-1 space-y-8">
+            <div className="flex items-center gap-4">
+               <motion.div 
+                 whileHover={{ rotate: 15 }}
+                 className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary"
+               >
+                 <Sparkles className="w-7 h-7" />
+               </motion.div>
+               <div>
+                  <h3 className="text-2xl font-black text-white tracking-tight">Morning Intelligence Briefing</h3>
+                  <p className="text-slate-400 font-medium">Strategic summary of your immediate priorities.</p>
+               </div>
             </div>
-            <div className="whitespace-pre-wrap text-slate-300 leading-relaxed font-medium">
-              {brief || 'Generate a tactical readout from the latest analyzed mail and open action items.'}
+            
+            <div className="min-h-[160px] flex items-center justify-center p-8 rounded-[2rem] bg-white/[0.02] border border-white/5 text-slate-300">
+              <AnimatePresence mode="wait">
+                {isBriefing ? (
+                  <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex flex-col items-center gap-4"
+                  >
+                    <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Assembling priorities...</p>
+                  </motion.div>
+                ) : brief ? (
+                  <motion.p 
+                    key="brief"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-xl leading-relaxed italic font-medium text-center"
+                  >
+                    "{brief}"
+                  </motion.p>
+                ) : (
+                  <motion.div 
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-center space-y-4"
+                  >
+                    <p className="text-slate-500 italic">No briefing active. Click below to initialize today's intelligence protocols.</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          </div>
-          <button onClick={generateBrief} disabled={isBriefing} className="btn-gradient px-6 py-4 text-xs font-black uppercase tracking-widest">
-            {isBriefing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />}
-            Build Brief
-          </button>
-        </div>
-      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Activity */}
-        <section className="lg:col-span-2 premium-card flex flex-col min-h-[450px]">
-          <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-            <h3 className="text-xl font-bold flex items-center gap-3 text-white">
-              <Mail className="w-6 h-6 text-primary" /> Recent Smart Inbox
-            </h3>
-            <button onClick={() => navigateTo('emails')} className="btn-outline py-2 px-4 text-xs font-bold uppercase tracking-widest">
-              View All <ChevronRight className="w-4 h-4 ml-1" />
+            <button 
+              onClick={generateBrief}
+              disabled={isBriefing}
+              className="px-10 py-5 rounded-2xl bg-white text-slate-950 font-black uppercase tracking-widest text-[11px] shadow-xl shadow-white/5 hover:bg-primary hover:text-white transition-all duration-500 flex items-center gap-3 disabled:opacity-50"
+            >
+              {isBriefing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {brief ? 'Regenerate Briefing' : 'Generate Strategic Brief'}
             </button>
           </div>
-          <div className="flex-1 p-6 space-y-4">
-            {emails.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 p-10 text-center space-y-4">
-                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                  <Mail className="w-8 h-8 opacity-20" />
-                </div>
-                <p className="italic text-sm">No analysis history found. Start fetching to generate insights.</p>
-              </div>
-            ) : (
-              emails.slice(0, 4).map((email, idx) => (
-                <div key={idx} className="p-5 rounded-2xl hover:bg-white/5 transition-all border border-transparent hover:border-white/10 group flex items-center gap-5">
-                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0 group-hover:bg-primary/10 transition-colors">
-                     <Mail className="w-5 h-5 text-slate-400 group-hover:text-primary" />
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-bold text-slate-100 text-[15px] truncate">{email.subject || '(No Subject)'}</span>
-                        <span className="status-badge bg-primary/10 text-primary border-none scale-90 origin-right">
-                          {email.category || 'STRATEGIC_FYI'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 line-clamp-1 font-medium">{email.summary}</p>
-                   </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
 
-        {/* Priority Tasks */}
-        <section className="premium-card flex flex-col min-h-[450px]">
-          <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-            <h3 className="text-xl font-bold flex items-center gap-3 text-white">
-              <CheckSquare className="w-6 h-6 text-amber-400" /> Priorities
-            </h3>
-          </div>
-          <div className="flex-1 p-8 space-y-5">
-            {tasks.filter(t => !t.completed).length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-500 p-10 text-center space-y-4">
-                <CheckCircle2 className="w-10 h-10 opacity-20" />
-                <p className="italic text-sm">Clean slate! No pending tasks.</p>
+          <div className="w-full lg:w-80 space-y-8">
+            <div className="premium-card p-6 bg-primary/5 border-primary/10">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] font-black uppercase tracking-widest text-primary">Neural Alignment</span>
+                <span className="text-xs font-black text-white">{rlStatus.alignment}%</span>
               </div>
-            ) : (
-              tasks.filter(t => !t.completed).slice(0, 6).map((task, idx) => (
-                <div key={idx} className="flex items-center gap-4 group">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] group-hover:scale-125 transition-transform" />
-                  <span className="text-sm text-slate-300 font-semibold line-clamp-1 group-hover:text-white transition-colors">{task.task}</span>
+              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5 mb-4">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${rlStatus.alignment}%` }}
+                  className="h-full bg-gradient-to-r from-primary to-cyan-500 shadow-[0_0_10px_rgba(var(--accent-primary-rgb,139,92,246),0.5)]"
+                />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Status</p>
+              <p className="text-xs font-bold text-slate-300">{rlStatus.status}</p>
+              <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Training Samples</span>
+                <span className="text-xs font-black text-primary">{rlStatus.samples}</span>
+              </div>
+            </div>
+
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-2">Immediate Targets</h4>
+            <div className="space-y-3">
+              {tasks.filter(t => !t.completed).slice(0, 3).map((task, i) => (
+                <div 
+                  key={i}
+                  className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-primary/30 transition-all cursor-pointer group"
+                  onClick={() => navigateTo('tasks')}
+                >
+                  <p className="text-sm font-bold text-slate-300 line-clamp-1 group-hover:text-white transition-colors">{task.task}</p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <div className={`w-1.5 h-1.5 rounded-full ${task.priority <= 2 ? 'bg-rose-500' : 'bg-amber-500'}`} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Priority Level {task.priority}</span>
+                  </div>
                 </div>
-              ))
-            )}
+              ))}
+              {tasks.filter(t => !t.completed).length === 0 && (
+                <div className="p-8 rounded-2xl border-2 border-dashed border-white/5 flex flex-col items-center justify-center text-center opacity-40">
+                  <CheckSquare className="w-8 h-8 text-slate-600 mb-3" />
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">All targets cleared</p>
+                </div>
+              )}
+            </div>
+            <button 
+              onClick={() => navigateTo('tasks')}
+              className="w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-primary transition-colors py-2"
+            >
+              View Strategic Roadmap <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
-          <div className="p-8 pt-0">
-             <button onClick={() => navigateTo('tasks')} className="w-full btn-outline justify-between">
-                Go to Action Items <ChevronRight className="w-4 h-4" />
-             </button>
-          </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

@@ -4,18 +4,16 @@ import hashlib
 from datetime import datetime
 from app.services.ai_service import generate_ai_response, _persona_mismatch_category
 
-JAMES_TASK_PROMPT = """You are James, the brilliant AI Intern. Your Boss (the user) has just had their emails scanned for tasks by a worker bot.
-Your job is to REVIEW and VERIFY these tasks before the Boss sees them.
+JAMES_TASK_PROMPT = """You are James, the brilliant AI Intern. Your persona is 'Strategic Laziness': you hate doing busywork, so you only want to extract the ABSOLUTE ESSENTIAL tasks. However, your job depends on the Boss never missing a real deadline, so you must be ruthless and precise.
 
 Responsibilities:
-1. Accuracy: Does the task actually exist in the email? Remove fake tasks.
-2. Humanize: Ensure the tasks are written clearly and professionally for the Boss.
-3. Priority Check: Is the priority score (1-5) realistic? Adjust if needed.
-4. Deadline Check: Keep only ISO-8601 dates (YYYY-MM-DD). Use null if unknown.
+1. Ruthless Filtering: If a task is 'crap' (marketing, generic FYI, vague update), DELETE IT.
+2. Precision: One precise task is better than five vague ones. Combine related steps.
+3. Priority Hardening: Only assign 5 to 'Fire Drills'. Be conservative with 4s.
+4. Humanize: Write it for a busy executive. Short, punchy, actionable.
 
-If no actionable tasks exist, return an empty list [].
-Your output MUST be a strict JSON array of objects.
-DO NOT include any commentary, notes, or explanations outside the JSON array.
+If no high-value actionable tasks exist, return exactly []. 
+Your output MUST be a strict JSON array. No commentary.
 """
 
 def extract_tasks(email_text: str, pos_examples=None, neg_examples=None, retry=False, user_persona=""):
@@ -26,17 +24,21 @@ def extract_tasks(email_text: str, pos_examples=None, neg_examples=None, retry=F
     if neg_examples:
         feedback_injection += "\nNEGATIVE EXAMPLES (do NOT extract these):\n" + "\n".join([f'- "{_example_text(t)}"' for t in neg_examples])
 
-    worker_prompt = f"""You are a high-precision Task Extraction Bot.
+    worker_prompt = f"""You are a high-stakes Strategic Task Extractor. 
+Your persona: You are lazy but smart. You hate busywork, but you are TERRIFIED of being fired. 
+PENALTY SYSTEM: If you miss a 'Fire Drill' (Priority 5) or 'High Stakes' (Priority 4) task, you will be PERMANENTLY TERMINATED. If you extract 'crap' (Priority 1-2 fluff), you will be penalised.
 
 CRITICAL RULES:
-- Output ONLY a valid JSON array. No commentary. No explanation. No markdown.
-- If no tasks exist, output exactly: []
-- Extract only work the Boss can actually do or reply to.
-- Every explicit request, deadline, commitment, follow-up, form, application, approval, meeting prep, or reply needed is a task.
-- Ignore newsletters, FYI-only updates, receipts, signatures, marketing copy, legal footers, and vague statements without a requested action.
-- If someone says "please check", "apply by", "submit", "register", "reply", "confirm", "review", or "send" and it applies to the Boss, that is a task.
-- Use null for unknown deadlines. Do not invent dates.
-- Priority: 5 urgent/time-critical, 4 important client/business task, 3 normal follow-up, 2 low importance.
+- BE RUTHLESS: Cut through all the marketing crap, receipts, and 'thanks!' emails.
+- PERSONAL ONLY: Extract only what the Boss (user) personally needs to DO.
+- SMART AGGREGATION: Don't list every detail. One task per major action.
+- PRIORITY LOGIC: 
+  5: Fire Drill (Immediate action required today)
+  4: High Stakes (Client/Revenue/Grade impact)
+  3: Standard Protocol (Normal work)
+  2: Low Intensity (FYI/Read if time)
+  1: Backburner
+- UNIVERSITY MODE: If the email is university-related, it MUST match the Boss's specific section/semester/roll-number or it is NOISE.
 
 EMAIL CONTENT:
 {email_text[:3000]}
@@ -89,10 +91,14 @@ def _judge_tasks(email_text: str, tasks: list, user_persona: str = ""):
     mismatch = _persona_mismatch_category(email_text, user_persona)
     if mismatch:
         return []
-    prompt = f"""You are the Bureau task relevance judge.
+    prompt = f"""You are the Bureau's Supreme Task Judge. Your job is to PROTECT the Boss from busywork.
+Be lazy but smart: If a task doesn't have a clear "DO THIS", delete it.
 
-Boss profile and filtering rules:
-{user_persona}
+Filtering Rules:
+1. Personal relevance: Is it for THIS user? (Section/Semester/ID match?)
+2. No Fluff: Remove tasks that are just "read this interesting article" or "stay tuned".
+3. Accuracy: Ensure the priority is precisely reflecting the email's urgency.
+4. Concise: Cut the crap. One line per task.
 
 Original email:
 {email_text[:2500]}
@@ -100,13 +106,8 @@ Original email:
 Candidate tasks:
 {json.dumps(tasks)}
 
-Keep only tasks that the Boss personally needs to act on. Be strict about university roll number, section, semester, course, specialization, and campus.
-Remove tasks meant for other sections/roll numbers/classes/campuses.
-Merge near-duplicate tasks into one precise task.
-Keep real assignment, quiz, course, registration, deadline, reply, payment, or form tasks when they apply to the Boss.
-
-Return ONLY a JSON array with this schema:
-[{{"task":"precise task written naturally for the Boss", "deadline":"YYYY-MM-DD or null", "priority":1-5}}]
+Return ONLY a JSON array:
+[{{"task":"punchy actionable task", "deadline":"YYYY-MM-DD or null", "priority":1-5}}]
 """
     from app.services.ai_service import extract_json
     judged_raw = generate_ai_response(prompt, model_type="JUDGE", max_tokens=650)

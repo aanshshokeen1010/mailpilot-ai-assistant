@@ -4,6 +4,8 @@ import logging
 import io
 import base64
 import re
+import json
+import time
 from typing import Optional, Union
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, validator
@@ -401,13 +403,21 @@ def _get_user_email(request: Request):
         import hmac, hashlib
         expected_sig = hmac.new(settings.SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected_sig):
+            logger.error("Auth Security: Signature mismatch.")
             return None
 
+        # Root Cause Fix: Handle missing padding in Base64 payload
+        missing_padding = len(payload) % 4
+        if missing_padding:
+            payload += '=' * (4 - missing_padding)
+            
         data = json.loads(base64.urlsafe_b64decode(payload).decode())
         email = data.get('user_email')
         if email: return email.lower().strip()
         return None
-    except: return None
+    except Exception as e: 
+        logger.error(f"Critical Auth Parsing Error: {e}")
+        return None
 
 # ─── Shared Background Status Tracker ───
 ANALYSIS_STATUS = {} # In-memory status for Hobby (cleared on cold start, but good for active sessions)
@@ -470,6 +480,9 @@ async def user_info(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="User not authenticated")
     except AuthRequiredError:
         return {"needs_auth": True}
+
+# NOTE: /reinforcement-status removed to comply with 'Strictly on User Device' requirement.
+# All alignment telemetry is now computed and stored in the frontend localStorage.
 
 @router.get("/emails-raw")
 async def get_emails_raw(request: Request, response: Response):

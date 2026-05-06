@@ -103,6 +103,11 @@ def creds_from_cookie(cookie_value):
             logger.error("SECURITY ALERT: Session cookie signature mismatch! Tampering attempt detected.")
             return None
 
+        # Root Cause Fix: Handle missing padding in Base64 payload
+        missing_padding = len(payload) % 4
+        if missing_padding:
+            payload += '=' * (4 - missing_padding)
+            
         data = json.loads(base64.urlsafe_b64decode(payload).decode())
         
         # Verify Session Expiration
