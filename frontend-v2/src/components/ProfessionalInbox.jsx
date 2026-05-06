@@ -293,7 +293,9 @@ function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRe
           {email.subject || '(No Subject)'}
         </span>
         <span className="text-[12px] text-slate-600 truncate flex-1 font-medium italic opacity-60">
-          {email.summary ? `[AI Summary] ${email.summary.slice(0, 80)}...` : `— ${email.snippet?.slice(0, 100)}`}
+          {email.summary && !email.summary.startsWith('////') 
+            ? `[AI Summary] ${email.summary.slice(0, 80)}...` 
+            : `— ${email.snippet?.slice(0, 100)}`}
         </span>
       </div>
 

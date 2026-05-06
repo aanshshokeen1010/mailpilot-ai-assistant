@@ -398,13 +398,17 @@ def ocr_image_with_nvidia(image_bytes, mime_type="image/png"):
 
 def _clean_summary_text(raw_text):
     """
-    Last-resort cleaner: if the AI leaked its reasoning into the output,
-    strip common preamble patterns and return just the useful part.
+    Last-resort cleaner: if the AI leaked its reasoning or structural artifacts (like ////)
+    into the output, strip them and return a high-quality fallback if needed.
     """
     if not raw_text:
         return "Summary unavailable."
     
-    # Common AI reasoning patterns that leak into output
+    # 1. Reject structural artifacts that leak from models (e.g. /////, ****, ----)
+    if re.match(r'^[\s/\\\-*._=]+$', raw_text):
+        return "Strategic intelligence pending."
+
+    # 2. Common AI reasoning patterns that leak into output
     noise_patterns = [
         r"^(?:We need to|Let me|I need to|I'll|Here's|The email|This email).*?[.:]",
         r"^(?:Based on|Looking at|After reading|Upon review).*?[.:]",
@@ -423,15 +427,18 @@ def _clean_summary_text(raw_text):
     if len(cleaned) < 10:
         # Take the last meaningful sentence from the original
         sentences = re.split(r'[.!?]\s+', raw_text.strip())
-        meaningful = [s for s in sentences if len(s.strip()) > 10]
+        meaningful = [s for s in sentences if len(s.strip()) > 10 and not re.match(r'^[\s/\\\-*._=]+$', s)]
         if meaningful:
             cleaned = meaningful[-1].strip().rstrip('.')
     
+    # Final check: if still empty or just garbage
+    if not cleaned or re.match(r'^[\s/\\\-*._=]+$', cleaned):
+        return "Strategic intelligence pending."
+
     # Remove leading quotes/colons
     cleaned = cleaned.lstrip(':').lstrip('"').rstrip('"').strip()
     
-    # Truncation logic: Allow more for detailed summaries
-    return cleaned[:800] if cleaned else "Summary unavailable."
+    return cleaned[:800]
 
 # ─── James: The Bureau Intern (Verification Layer) ───
 
