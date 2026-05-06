@@ -339,11 +339,16 @@ def get_emails(creds_cookie=None):
         except Exception as e:
             logger.error(f"Failed to process thread message: {e}")
             
-    # Execute batch request for full thread details
-    batch = service.new_batch_http_request(callback=thread_callback)
-    for thread in threads:
-        batch.add(service.users().threads().get(userId='me', id=thread['id']))
-    batch.execute()
+    # ─── BATCH CHUNKING (CRITICAL FIX) ───
+    # Google Batch API allows max 100 requests per batch.
+    # We chunk the threads into batches of 100 to avoid "Inner request count exceeds the limit" errors.
+    CHUNK_SIZE = 100
+    for i in range(0, len(threads), CHUNK_SIZE):
+        batch = service.new_batch_http_request(callback=thread_callback)
+        chunk = threads[i : i + CHUNK_SIZE]
+        for thread in chunk:
+            batch.add(service.users().threads().get(userId='me', id=thread['id']))
+        batch.execute()
     
     # Sort by date descending
     email_list.sort(key=lambda x: int(x.get('internalDate', 0)), reverse=True)
