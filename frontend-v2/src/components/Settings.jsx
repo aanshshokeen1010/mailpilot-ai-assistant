@@ -5,7 +5,7 @@ import { DEFAULT_SETTINGS, loadLocalSettings, mergeServerSettings, saveLocalSett
 import { clearMailpilotCaches, saveTasksCache } from '../cacheStorage';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function Settings({ showToast, userEmail, setTasks, inboxMode, setInboxMode, userName, userPicture, onAuthExpired }) {
+export default function Settings({ showToast, userEmail, setTasks, inboxMode, setInboxMode, userName, userPicture, onAuthExpired, hideSyncButton }) {
   const [formData, setFormData] = useState(() => loadLocalSettings());
   const [saving, setSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(true);
@@ -507,16 +507,25 @@ export default function Settings({ showToast, userEmail, setTasks, inboxMode, se
         )}
       </AnimatePresence>
 
-      <div className="fixed bottom-10 right-10 left-10 md:left-auto md:w-96 z-[9999] pointer-events-none">
-        <button 
-          onClick={handleSubmit}
-          disabled={saving}
-          className="w-full btn-gradient h-16 rounded-2xl text-[11px] font-black uppercase tracking-[0.3em] flex items-center justify-center gap-3 shadow-2xl shadow-primary/30 pointer-events-auto hover:shadow-primary/50 transition-all"
-        >
-          {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-          Synchronize Configuration
-        </button>
-      </div>
+      <AnimatePresence>
+        {!hideSyncButton && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-10 right-10 left-10 md:left-auto md:w-72 z-[9999] pointer-events-none"
+          >
+            <button 
+              onClick={handleSubmit}
+              disabled={saving}
+              className="w-full btn-gradient h-12 rounded-xl text-[10px] font-black uppercase tracking-[0.25em] flex items-center justify-center gap-3 shadow-2xl shadow-primary/30 pointer-events-auto hover:shadow-primary/50 transition-all active:scale-95"
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Sync Config
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

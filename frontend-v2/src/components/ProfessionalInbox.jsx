@@ -121,105 +121,132 @@ function HoverPreview({ email, rect }) {
 }
 
 // Full detail view (zoom-in)
-function EmailDetail({ email, onBack, onAnalyze, analyzing, showToast }) {
+function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) {
   const sender = parseSender(email.sender);
-  const cat = CATEGORY_STYLES[email.category] || CATEGORY_STYLES.STRATEGIC_FYI;
-  
+  const isCritical = email.category === 'CRITICAL_ACTION';
+
   return (
-    <motion.div
-      layoutId={`email-${email.id}`}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-      className="h-full flex flex-col"
+    <motion.div 
+      initial={{ x: 300, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: 300, opacity: 0 }}
+      className="w-full lg:w-[450px] bg-[#0a0a0a] border-l border-white/10 flex flex-col shadow-2xl relative z-30"
     >
-      {/* Header bar */}
-      <div className="flex items-center gap-6 p-6 border-b border-white/5">
-        <button onClick={onBack} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <div className="flex-1 min-w-0 pr-4">
-          <div className="flex items-center gap-3 mb-1.5">
-            <div className={`px-2.5 py-1 rounded-lg bg-${cat.color}-500/10 border border-${cat.color}-500/20`}>
-              <span className={`text-[9px] font-black uppercase tracking-[0.2em] text-${cat.color}-400`}>{cat.label}</span>
-            </div>
-            <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">{getTimeLabel(email.internalDate)}</span>
-          </div>
-          <h2 className="text-xl font-bold text-white truncate max-w-full">{email.subject || '(No Subject)'}</h2>
-        </div>
-        <div className="flex-shrink-0">
-          <button
-            onClick={() => onAnalyze(email)}
-            disabled={analyzing}
-            className="btn-gradient px-6 h-12 text-[10px] font-black uppercase tracking-widest flex items-center gap-2"
-          >
-            {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{email.summary ? 'Refine Intel' : 'Analyze'}</span>
+      {/* Panel Header */}
+      <div className="p-6 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="flex items-center gap-4">
+          <button onClick={onClose} className="p-2 rounded-xl bg-white/5 text-slate-400 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
           </button>
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Intelligence Brief</span>
+        </div>
+        <button
+          onClick={() => onAnalyze(email)}
+          disabled={analyzing}
+          className="btn-gradient px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2"
+        >
+          {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+          {email.summary ? 'Refine' : 'Analyze'}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-8 space-y-10">
+        {/* Header Info */}
+        <div className="space-y-4">
+          <h3 className="text-2xl font-black text-white tracking-tight leading-tight">{email.subject || '(No Subject)'}</h3>
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5">
+            <SenderAvatar name={sender.name} />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-white">{sender.name}</p>
+              <p className="text-xs text-slate-500 truncate">{sender.email}</p>
+            </div>
+            <span className="text-[10px] font-bold text-slate-600 tabular-nums">{getTimeLabel(email.internalDate)}</span>
+          </div>
+        </div>
+
+        {/* AI Summary Section */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-primary">
+            <Sparkles className="w-4 h-4" />
+            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Neural Summary</span>
+          </div>
+          {email.summary ? (
+            <div className="premium-card p-6 bg-primary/5 border-primary/20 space-y-4">
+              <LinkedContent text={email.summary} className="text-base text-slate-200 leading-relaxed font-medium" />
+              {email.james_note && (
+                <div className="pt-4 border-t border-white/5">
+                   <p className="text-xs text-primary font-bold italic">💡 James: {email.james_note}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 rounded-3xl border border-dashed border-white/10 text-center space-y-4">
+              <p className="text-xs text-slate-500 font-medium">No intelligence brief generated yet.</p>
+              <button onClick={() => onAnalyze(email)} className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline">Initialize Analysis</button>
+            </div>
+          )}
+        </div>
+
+        {/* Tactical Tasks */}
+        <div className="space-y-4">
+           <div className="flex items-center gap-2 text-amber-500">
+             <Zap className="w-4 h-4" />
+             <span className="text-[10px] font-black uppercase tracking-[0.3em]">Tactical Extraction</span>
+           </div>
+           {email.tasks?.length > 0 ? (
+             <div className="space-y-3">
+                {email.tasks.map((t, idx) => (
+                  <div key={idx} className="flex items-start gap-4 p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 group">
+                    <div className="mt-1 w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                    <span className="text-[13px] text-slate-300 font-medium leading-snug">{t.task || t}</span>
+                  </div>
+                ))}
+             </div>
+           ) : (
+             <p className="text-xs text-slate-600 italic px-2">No actionable tasks identified in this thread.</p>
+           )}
+        </div>
+
+        {/* Full Context (Snippet) */}
+        <div className="space-y-4">
+           <div className="flex items-center gap-2 text-slate-500">
+             <Mail className="w-4 h-4" />
+             <span className="text-[10px] font-black uppercase tracking-[0.3em]">Origin Context</span>
+           </div>
+           <div className="p-6 rounded-2xl bg-white/[0.01] border border-white/5">
+              <p className="text-sm text-slate-400 leading-relaxed font-medium whitespace-pre-wrap">{email.snippet}</p>
+           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-12">
-        <LayoutGroup>
-        {/* Sender card */}
-        <div className="flex items-center gap-4 p-5 rounded-2xl bg-white/[0.02] border border-white/5">
-          <SenderAvatar name={sender.name} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-white">{sender.name}</p>
-            <p className="text-xs text-slate-500 truncate">{sender.email}</p>
-          </div>
-        </div>
-
-        {/* AI Summary */}
-        {email.summary && (
-          <div className="p-6 rounded-2xl bg-gradient-to-br from-primary/5 to-cyan-500/5 border border-primary/10 space-y-3">
-            <div className="flex items-center gap-2 text-primary">
-              <Sparkles className="w-4 h-4" />
-              <span className="text-[10px] font-black uppercase tracking-widest">AI Intelligence Brief</span>
-            </div>
-            <LinkedContent text={email.summary} className="text-sm text-slate-300 leading-relaxed font-medium" />
-            {email.james_note && (
-              <p className="text-xs text-primary/80 italic font-medium pt-2 border-t border-white/5">💡 {email.james_note}</p>
-            )}
-          </div>
-        )}
-
-        {/* Email body */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-600">Email Content</p>
-          <div className="p-6 rounded-2xl bg-white/[0.02] border border-white/5">
-            <p className="text-sm text-slate-400 leading-relaxed whitespace-pre-wrap font-medium">{email.snippet}</p>
-          </div>
-        </div>
-
-        {/* Tasks */}
-        {email.tasks?.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Extracted Tasks</p>
-            <div className="space-y-2">
-              {email.tasks.map((t, i) => (
-                <div key={i} className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/5 border border-amber-500/10">
-                  <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-                  <span className="text-sm text-slate-300 font-medium">{t.task || t}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        </LayoutGroup>
+      {/* Footer Actions */}
+      <div className="p-6 border-t border-white/5 bg-[#050505] grid grid-cols-2 gap-4">
+        <button className="py-4 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all">Archive</button>
+        <button className="py-4 rounded-xl bg-primary text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-primary/20">Reply with AI</button>
       </div>
     </motion.div>
   );
 }
 
-// Main compact row
-function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRef }) {
+function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRef, showToast }) {
+  const [isStarred, setIsStarred] = useState(email.labels?.includes('STARRED'));
+  const [checked, setChecked] = useState(false);
   const sender = parseSender(email.sender);
   const cat = CATEGORY_STYLES[email.category] || CATEGORY_STYLES.STRATEGIC_FYI;
   const isUnread = email.labels?.includes('UNREAD');
+  const isCritical = email.category === 'CRITICAL_ACTION';
   
+  const handleStar = (e) => {
+    e.stopPropagation();
+    setIsStarred(!isStarred);
+    showToast('info', isStarred ? 'Removed from Strategic Watchlist.' : 'Added to Strategic Watchlist.');
+  };
+
+  const handleCheck = (e) => {
+    e.stopPropagation();
+    setChecked(!checked);
+  };
+
   return (
     <motion.div
       ref={rowRef}
@@ -229,42 +256,69 @@ function EmailRow({ email, isSelected, onSelect, onHoverStart, onHoverEnd, rowRe
       onClick={() => onSelect(email)}
       onMouseEnter={onHoverStart}
       onMouseLeave={onHoverEnd}
-      className={`group flex items-center gap-4 px-5 py-2 cursor-pointer transition-all duration-200 border-b border-white/[0.03] ${
-        isSelected ? 'bg-primary/5 border-l-2 border-l-primary' : 'hover:bg-white/[0.025] border-l-2 border-l-transparent'
-      }`}
-      whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.04)' }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      className={`group relative flex items-center gap-4 px-4 py-3 cursor-pointer transition-all duration-200 border-b border-white/[0.03] ${
+        isSelected ? 'bg-primary/10 border-l-2 border-l-primary' : 'hover:bg-white/[0.03] border-l-2 border-l-transparent'
+      } ${isUnread ? 'bg-white/[0.01]' : 'opacity-80'}`}
+      whileHover={{ x: 2 }}
     >
-      {/* Category dot */}
-      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 bg-${cat.color}-500 ${isUnread ? 'shadow-[0_0_8px] shadow-' + cat.color + '-500/50' : 'opacity-40'}`} />
-      
-      {/* Avatar */}
-      <SenderAvatar name={sender.name} />
-      
-      {/* Sender name */}
-      <div className="w-44 flex-shrink-0 min-w-0">
-        <p className={`text-[13px] truncate ${isUnread ? 'font-bold text-white' : 'font-medium text-slate-400'}`}>
-          {sender.name}
-        </p>
+      {/* 1. Selection & Star */}
+      <div className="flex items-center gap-3 flex-shrink-0 w-12 justify-center">
+        <button 
+          onClick={handleCheck}
+          className={`w-4 h-4 rounded border transition-colors flex items-center justify-center ${checked ? 'bg-primary border-primary' : 'border-white/10 group-hover:border-white/30'}`}
+        >
+          {checked && <div className="w-1.5 h-1.5 bg-white rounded-sm" />}
+        </button>
+        <button 
+          onClick={handleStar}
+          className={`transition-colors ${isStarred ? 'text-amber-400' : 'text-slate-700 hover:text-slate-500'}`}
+        >
+          <Star className={`w-4 h-4 ${isStarred ? 'fill-amber-400' : ''}`} />
+        </button>
       </div>
 
-      {/* Subject + snippet */}
-      <div className="flex-1 min-w-0 flex items-center gap-3">
-        <span className={`text-[13px] truncate max-w-[40%] ${isUnread ? 'font-semibold text-slate-200' : 'font-medium text-slate-400'}`}>
+      {/* 2. Sender (High Density) */}
+      <div className="w-48 flex-shrink-0 min-w-0">
+        <div className="flex items-center gap-2">
+          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 bg-${cat.color}-500 ${isUnread ? 'animate-pulse' : 'opacity-30'}`} />
+          <p className={`text-[13px] truncate tracking-tight ${isUnread ? 'font-black text-white' : 'font-semibold text-slate-400'}`}>
+            {sender.name}
+          </p>
+        </div>
+      </div>
+
+      {/* 3. Subject & Snippet (The "Gmail" feel) */}
+      <div className="flex-1 min-w-0 flex items-baseline gap-2">
+        <span className={`text-[13px] truncate tracking-tight ${isUnread ? 'font-bold text-slate-200' : 'font-medium text-slate-500'}`}>
           {email.subject || '(No Subject)'}
         </span>
-        <span className="text-[12px] text-slate-600 truncate flex-1 font-normal">
-          — {email.snippet?.slice(0, 120)}
+        <span className="text-[12px] text-slate-600 truncate flex-1 font-medium italic opacity-60">
+          {email.summary ? `[AI Summary] ${email.summary.slice(0, 80)}...` : `— ${email.snippet?.slice(0, 100)}`}
         </span>
       </div>
 
-      {/* Meta */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {email.summary && <Sparkles className="w-3 h-3 text-primary/50" />}
-        <span className={`text-[11px] tabular-nums ${isUnread ? 'font-bold text-slate-300' : 'text-slate-600 font-medium'}`}>
-          {getTimeLabel(email.internalDate)}
-        </span>
-        <ChevronRight className="w-3.5 h-3.5 text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+      {/* 4. Date & Quick Actions */}
+      <div className="flex items-center gap-4 flex-shrink-0 ml-auto pl-4">
+        {/* Quick Actions (Appear on hover) */}
+        <div className="hidden group-hover:flex items-center gap-2 bg-slate-900/80 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 shadow-xl">
+           <button onClick={(e) => { e.stopPropagation(); /* Archive */ }} className="p-1.5 hover:bg-white/10 rounded-md text-slate-400 hover:text-white transition-colors">
+              <Archive className="w-3.5 h-3.5" />
+           </button>
+           <button onClick={(e) => { e.stopPropagation(); /* Delete */ }} className="p-1.5 hover:bg-white/10 rounded-md text-rose-400/50 hover:text-rose-400 transition-colors">
+              <Trash2 className="w-3.5 h-3.5" />
+           </button>
+           <button onClick={(e) => { e.stopPropagation(); /* Deep Dive */ }} className="p-1.5 hover:bg-primary/20 rounded-md text-primary transition-colors">
+              <Zap className="w-3.5 h-3.5" />
+           </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {email.summary && <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" />}
+          <span className={`text-[11px] tabular-nums tracking-tighter ${isUnread ? 'font-black text-slate-300' : 'text-slate-600 font-bold'}`}>
+            {getTimeLabel(email.internalDate)}
+          </span>
+        </div>
+        <ChevronRight className="w-3.5 h-3.5 text-slate-800" />
       </div>
     </motion.div>
   );
@@ -358,30 +412,25 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
       </header>
 
       {/* Search + Filter bar */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="relative flex-1 min-w-[280px] max-w-lg">
+      <div className="flex items-center gap-4 flex-wrap bg-white/[0.01] p-2 rounded-2xl border border-white/5 mx-4">
+        <div className="relative flex-1 min-w-[240px] max-w-lg">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search emails..."
-            className="w-full pl-11 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-slate-700 focus:outline-none focus:border-primary/50 transition-all"
+            placeholder="Tactical Thread Search..."
+            className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder:text-slate-700 focus:outline-none focus:border-primary/50 transition-all"
           />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/10 text-slate-600">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
 
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 items-center">
           <button
             onClick={() => setFilterCategory('all')}
-            className={`px-3.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+            className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
               filterCategory === 'all' ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:text-white'
             }`}
           >
-            All ({emails.length})
+            All
           </button>
           {Object.entries(CATEGORY_STYLES).map(([key, val]) => {
             const count = catCounts[key];
@@ -390,66 +439,87 @@ export default function ProfessionalInbox({ emails, setEmails, showToast, analyz
               <button
                 key={key}
                 onClick={() => setFilterCategory(filterCategory === key ? 'all' : key)}
-                className={`px-3.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${
                   filterCategory === key ? `bg-${val.color}-500/20 text-${val.color}-400 border border-${val.color}-500/30` : 'bg-white/5 text-slate-500 hover:text-white'
                 }`}
               >
                 <div className={`w-1.5 h-1.5 rounded-full bg-${val.color}-500`} />
-                {val.label} ({count})
+                {val.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Email list */}
-      <motion.div 
-        initial="hidden"
-        animate="visible"
-        variants={{
-          visible: { transition: { staggerChildren: 0.05 } }
-        }}
-        className="premium-card overflow-hidden"
-      >
-        {filtered.length === 0 ? (
-          <div className="h-64 flex flex-col items-center justify-center gap-4">
-            <Mail className="w-10 h-10 text-slate-800" />
-            <p className="text-slate-600 text-sm font-bold uppercase tracking-widest">
-              {searchQuery ? 'No results match your search' : 'No emails to display'}
-            </p>
-          </div>
-        ) : (
-          groupOrder.map(groupName => {
-            const items = groups[groupName];
-            if (!items?.length) return null;
-            return (
-              <motion.div 
-                key={groupName}
-                layout
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
-                <div className="px-5 py-2.5 bg-white/[0.02] border-b border-white/5 flex items-center gap-2">
-                  <Clock className="w-3 h-3 text-slate-700" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">{groupName}</span>
-                  <span className="text-[10px] text-slate-700 font-bold">{items.length}</span>
-                </div>
-                {items.map(email => (
-                  <EmailRow
-                    key={email.id}
-                    email={email}
-                    isSelected={selectedEmail?.id === email.id}
-                    onSelect={setSelectedEmail}
-                    onHoverStart={() => handleHoverStart(email, email.id)}
-                    onHoverEnd={handleHoverEnd}
-                    rowRef={el => { if (el) rowRefs.current[email.id] = el; }}
-                  />
-                ))}
-              </motion.div>
-            );
-          })
-        )}
-      </motion.div>
+      {/* Split View Container */}
+      <div className="flex-1 flex overflow-hidden premium-card mx-4 mb-4">
+        {/* Left: Email List (The Gmail Side) */}
+        <div className={`flex-1 flex flex-col min-w-0 border-r border-white/5 overflow-hidden`}>
+          {filtered.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-slate-900/10">
+              <Mail className="w-10 h-10 text-slate-800" />
+              <p className="text-slate-600 text-sm font-bold uppercase tracking-widest">
+                {searchQuery ? 'No tactical matches' : 'Intelligence queue empty'}
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-white/[0.03]">
+              {groupOrder.map(groupName => {
+                const items = groups[groupName];
+                if (!items || items.length === 0) return null;
+                
+                return (
+                  <div key={groupName} className="relative">
+                    <div className="sticky top-0 z-20 px-5 py-2 bg-[#0a0a0a]/95 backdrop-blur-md border-b border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Clock className="w-3 h-3 text-slate-600" />
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">{groupName}</span>
+                      </div>
+                      <span className="text-[9px] text-slate-800 font-black uppercase tracking-widest">{items.length} THREADS</span>
+                    </div>
+                    {items.map(email => (
+                      <EmailRow
+                        key={email.id}
+                        email={email}
+                        isSelected={selectedEmail?.id === email.id}
+                        onSelect={setSelectedEmail}
+                        onHoverStart={() => handleHoverStart(email, email.id)}
+                        onHoverEnd={handleHoverEnd}
+                        rowRef={el => { if (el) rowRefs.current[email.id] = el; }}
+                        showToast={showToast}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Right: AI Intelligence Panel (The App Side) */}
+        <AnimatePresence mode="wait">
+          {selectedEmail ? (
+            <EmailPreviewPanel 
+              key={selectedEmail.id}
+              email={liveSelected || selectedEmail}
+              onAnalyze={handleAnalyze}
+              analyzing={analyzingId === selectedEmail.id}
+              showToast={showToast}
+              onClose={() => setSelectedEmail(null)}
+            />
+          ) : (
+            <div className="hidden lg:flex w-full lg:w-[450px] bg-slate-950/20 items-center justify-center p-12 text-center flex-col gap-6">
+               <div className="w-20 h-20 rounded-[2.5rem] bg-white/[0.02] border border-white/5 flex items-center justify-center text-slate-800">
+                  <Mail className="w-10 h-10" />
+               </div>
+               <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-600 mb-2">Bridge Protocol Active</p>
+                  <p className="text-sm text-slate-700 font-medium leading-relaxed">Select a thread to initialize AI context extraction and strategic briefing.</p>
+               </div>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Hover preview tooltip */}
       <AnimatePresence>

@@ -104,10 +104,20 @@ export default function JamesTerminal({ showToast }) {
                 >
                   <div className={`max-w-[85%] rounded-2xl p-4 text-sm font-medium leading-relaxed ${
                     msg.role === 'james'
-                      ? 'border border-white/5 bg-white/5 text-slate-200 italic'
+                      ? 'border border-white/5 bg-white/5 text-slate-200 italic font-mono'
                       : 'bg-primary text-white shadow-lg shadow-primary/20'
                   }`}>
-                    {msg.content}
+                    {msg.role === 'james' ? (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.5 }}
+                      >
+                        {msg.content}
+                      </motion.span>
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                 </motion.div>
               ))}
@@ -152,6 +162,8 @@ export default function JamesTerminal({ showToast }) {
                 <Send className="h-5 w-5" />
               </button>
             </form>
+            <div className="pointer-events-none absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.02] mix-blend-overlay" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-primary/[0.01] to-transparent bg-[length:100%_4px] animate-scanline" />
           </motion.div>
         )}
       </AnimatePresence>

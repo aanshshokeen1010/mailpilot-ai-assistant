@@ -35,6 +35,8 @@ export default function App() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeToasts, setActiveToasts] = useState(0);
+  const isToastVisible = activeToasts > 0;
   const [selectedEmailForRecap, setSelectedEmailForRecap] = useState(null);
   const [deepDive, setDeepDive] = useState(null);
   const [isDeepDiving, setIsDeepDiving] = useState(false);
@@ -63,9 +65,14 @@ export default function App() {
   const oauthHandled = useRef(false);
 
   const showToast = (type, message) => {
-    if (type === 'success') toast.success(message);
-    else if (type === 'error') toast.error(message);
-    else if (type === 'info') toast.info(message);
+    const options = {
+      onOpen: () => setActiveToasts(prev => prev + 1),
+      onClose: () => setActiveToasts(prev => Math.max(0, prev - 1)),
+    };
+    if (type === 'success') toast.success(message, options);
+    else if (type === 'error') toast.error(message, options);
+    else if (type === 'warning') toast.warning(message, options);
+    else toast.info(message, options);
   };
 
   const handleAnalyzeSingle = async (email) => {
@@ -374,7 +381,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col lg:flex-row font-sans selection:bg-primary/30 text-slate-200 overflow-hidden">
       <ToastContainer theme="dark" position="bottom-right" toastStyle={{ borderRadius: '1.25rem', background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', fontWeight: 'bold' }} />
-      <JamesTerminal showToast={showToast} />
+      <AnimatePresence>
+        {!isToastVisible && <JamesTerminal showToast={showToast} />}
+      </AnimatePresence>
       
       <Sidebar 
         currentView={activeTab} 
@@ -465,6 +474,7 @@ export default function App() {
                   inboxMode={inboxMode} 
                   setInboxMode={setInboxMode} 
                   onAuthExpired={() => setIsAuthenticated(false)}
+                  hideSyncButton={isToastVisible}
                 />
               )}
             </motion.div>

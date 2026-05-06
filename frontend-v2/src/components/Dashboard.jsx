@@ -207,24 +207,56 @@ export default function Dashboard({ emails = [], tasks = [], navigateTo }) {
             </button>
           </div>
 
-          <div className="w-full lg:w-80 space-y-8">
-            <div className="premium-card p-6 bg-primary/5 border-primary/10">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black uppercase tracking-widest text-primary">Neural Alignment</span>
-                <span className="text-xs font-black text-white">{rlStatus.alignment}%</span>
+          <div className="w-full lg:w-96 space-y-8">
+            <div className="premium-card p-8 bg-gradient-to-br from-primary/10 to-transparent border-primary/20 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">
+                <Shield className="w-20 h-20 text-primary rotate-12" />
               </div>
-              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden border border-white/5 mb-4">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${rlStatus.alignment}%` }}
-                  className="h-full bg-gradient-to-r from-primary to-cyan-500 shadow-[0_0_10px_rgba(var(--accent-primary-rgb,139,92,246),0.5)]"
-                />
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Status</p>
-              <p className="text-xs font-bold text-slate-300">{rlStatus.status}</p>
-              <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Training Samples</span>
-                <span className="text-xs font-black text-primary">{rlStatus.samples}</span>
+              
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary block mb-1">Bureau Link</span>
+                    <h4 className="text-xl font-black text-white">Neural Alignment</h4>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-2xl font-black text-white">{rlStatus.alignment}%</span>
+                    <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-1">
+                      <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+                      Synchronized
+                    </span>
+                  </div>
+                </div>
+
+                <div className="relative h-4 w-full bg-slate-950 rounded-full border border-white/5 p-1 mb-8 shadow-inner">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${rlStatus.alignment}%` }}
+                    className="h-full rounded-full bg-gradient-to-r from-primary via-cyan-500 to-primary bg-[length:200%_100%] animate-shimmer shadow-[0_0_20px_rgba(var(--accent-primary-rgb,139,92,246),0.4)]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-1">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Alignment Status</p>
+                    <p className="text-xs font-bold text-slate-200">{rlStatus.status}</p>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Learning Nodes</p>
+                    <p className="text-xs font-black text-primary">{rlStatus.samples}</p>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
+                  <div className="flex -space-x-2">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="w-6 h-6 rounded-full bg-slate-800 border border-slate-900 flex items-center justify-center">
+                        <Zap className="w-3 h-3 text-slate-500" />
+                      </div>
+                    ))}
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">Strictly On-Device Telemetry</span>
+                </div>
               </div>
             </div>
 
