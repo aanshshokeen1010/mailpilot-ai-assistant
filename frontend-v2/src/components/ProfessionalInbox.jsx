@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
-import { Mail, Clock, Star, ChevronRight, ArrowLeft, Sparkles, Loader2, Search, Filter, X, Eye, Zap, Shield, AlertCircle, FileText, Send, ThumbsUp, ThumbsDown, TrendingUp, Archive } from 'lucide-react';
+import { Mail, Clock, Star, ChevronRight, ArrowLeft, Sparkles, Loader2, Search, Filter, X, Eye, Zap, Shield, AlertCircle, FileText, Send, ThumbsUp, ThumbsDown, TrendingUp, Archive, Trash2 } from 'lucide-react';
 import { fetchAPI } from '../api';
 import LinkedContent from './LinkedContent';
 

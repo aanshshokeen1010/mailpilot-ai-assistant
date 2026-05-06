@@ -21,7 +21,10 @@ router = APIRouter()
 logger = logging.getLogger("mailpilot.routes")
 
 class SettingsRequest(BaseModel):
-    fetch_limit: str = "10"
+    class Config:
+        extra = "ignore"
+    
+    fetch_limit: str = "100"
     default_action: str = "draft"
     fetch_priority: str = "all"
     ai_detail_level: str = "medium"
@@ -43,7 +46,7 @@ class SettingsRequest(BaseModel):
     def validate_limit(cls, v):
         # Handle both string and numeric inputs from frontend
         val = str(v)
-        return val if val.isdigit() and 1 <= int(val) <= 200 else "10"
+        return val if val.isdigit() and 1 <= int(val) <= 100 else "100"
         
     @validator('ai_detail_level')
     def validate_detail(cls, v):
