@@ -120,8 +120,169 @@ function HoverPreview({ email, rect }) {
   );
 }
 
-// Full detail view (zoom-in)
-function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) {
+function EmailDetail({ email, onBack, onAnalyze, analyzing, showToast }) {
+  const sender = parseSender(email.sender);
+  const isCritical = email.category === 'CRITICAL_ACTION';
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.02 }}
+      className="flex-1 flex flex-col h-full bg-[#050505]"
+    >
+      {/* Header / Navigation */}
+      <div className="p-6 border-b border-white/5 flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <button onClick={onBack} className="group p-2.5 rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-white transition-all">
+            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+          </button>
+          <div className="space-y-1">
+             <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Intelligence Detail</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+             </div>
+             <h3 className="text-xl font-black text-white tracking-tight">{email.subject}</h3>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onAnalyze(email)}
+            disabled={analyzing}
+            className="btn-gradient px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-xl shadow-primary/20"
+          >
+            {analyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {email.summary ? 'Refine Intelligence' : 'Initialize Analysis'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="max-w-5xl mx-auto p-12 space-y-16">
+          {/* Sender & Context */}
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-4">
+              <SenderAvatar name={sender.name} />
+              <div>
+                <p className="text-lg font-bold text-white tracking-tight">{sender.name}</p>
+                <p className="text-sm text-slate-500 font-medium">{sender.email}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs font-black text-slate-700 uppercase tracking-widest mb-1">Transmission Timestamp</p>
+              <p className="text-sm font-bold text-slate-300 tabular-nums">{new Date(parseInt(email.internalDate)).toLocaleString()}</p>
+            </div>
+          </div>
+
+          {/* Neural Summary Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="flex items-center gap-3 text-primary">
+                <Sparkles className="w-5 h-5" />
+                <h4 className="text-xs font-black uppercase tracking-[0.3em]">Strategic Briefing</h4>
+              </div>
+              
+              <div className="premium-card p-10 bg-primary/5 border-primary/20 relative group">
+                <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                  <Sparkles className="w-32 h-32 text-primary" />
+                </div>
+                {email.summary ? (
+                  <div className="space-y-8 relative z-10">
+                    <LinkedContent text={email.summary} className="text-lg text-slate-100 leading-relaxed font-medium" />
+                    {email.james_note && (
+                      <div className="pt-8 border-t border-white/10">
+                        <div className="flex items-center gap-3 mb-3">
+                           <div className="w-2 h-2 rounded-full bg-primary" />
+                           <span className="text-[10px] font-black uppercase tracking-widest text-primary">Intern Note</span>
+                        </div>
+                        <p className="text-sm text-slate-400 font-medium italic leading-relaxed">"{email.james_note}"</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-20 text-center space-y-6">
+                    <div className="w-16 h-16 rounded-3xl bg-white/[0.02] border border-dashed border-white/10 mx-auto flex items-center justify-center text-slate-700">
+                      <Loader2 className="w-8 h-8" />
+                    </div>
+                    <p className="text-slate-500 font-medium">Strategic intelligence has not been initialized for this thread.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-8">
+               {/* Categories & Stats */}
+               <div className="space-y-6">
+                  <div className="flex items-center gap-3 text-emerald-400">
+                    <Shield className="w-5 h-5" />
+                    <h4 className="text-xs font-black uppercase tracking-[0.3em]">Classification</h4>
+                  </div>
+                  <div className="premium-card p-6 border-white/5 bg-white/[0.01] space-y-4">
+                     <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Category</span>
+                        <span className="px-3 py-1 rounded-full bg-primary/20 text-primary text-[10px] font-black uppercase tracking-widest border border-primary/30">
+                          {email.category || 'Strategic FYI'}
+                        </span>
+                     </div>
+                     <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Priority</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">Level 2</span>
+                     </div>
+                  </div>
+               </div>
+
+               {/* Tactical Tasks */}
+               <div className="space-y-6">
+                  <div className="flex items-center gap-3 text-amber-500">
+                    <Zap className="w-5 h-5" />
+                    <h4 className="text-xs font-black uppercase tracking-[0.3em]">Action Items</h4>
+                  </div>
+                  <div className="space-y-3">
+                    {email.tasks?.length > 0 ? (
+                      email.tasks.map((t, idx) => (
+                        <div key={idx} className="flex items-start gap-4 p-5 rounded-2xl bg-amber-500/5 border border-amber-500/10 group hover:border-amber-500/30 transition-all">
+                          <div className="mt-1 w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
+                          <span className="text-sm text-slate-300 font-bold leading-snug">{t.task || t}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-8 rounded-2xl border border-dashed border-white/5 text-center">
+                        <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">No Tasks Detected</p>
+                      </div>
+                    )}
+                  </div>
+               </div>
+            </div>
+          </div>
+
+          {/* Content Body */}
+          <div className="space-y-6 pb-20">
+            <div className="flex items-center gap-3 text-slate-600">
+              <FileText className="w-5 h-5" />
+              <h4 className="text-xs font-black uppercase tracking-[0.3em]">Thread Context</h4>
+            </div>
+            <div className="premium-card p-12 bg-white/[0.01] border-white/5">
+              <p className="text-base text-slate-400 leading-relaxed font-medium whitespace-pre-wrap">{email.snippet}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Reply Bar */}
+      <div className="p-8 border-t border-white/5 bg-[#080808]/80 backdrop-blur-md sticky bottom-0">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-8">
+           <div className="flex-1 flex items-center gap-4 px-6 py-4 rounded-2xl bg-white/[0.02] border border-white/5 text-slate-500 text-sm font-medium italic">
+             Ready to draft a strategic response...
+           </div>
+           <button className="btn-gradient px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3">
+             <Send className="w-4 h-4" />
+             Execute Reply
+           </button>
+        </div>
+      </div>
+    </motion.div>
+  function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) {
   const sender = parseSender(email.sender);
   const isCritical = email.category === 'CRITICAL_ACTION';
 
@@ -172,7 +333,7 @@ function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) 
           </div>
           {email.summary ? (
             <div className="premium-card p-6 bg-primary/5 border-primary/20 space-y-4">
-              <LinkedContent text={email.summary} className="text-base text-slate-200 leading-relaxed font-medium" />
+              <LinkedContent text={email.summary} className="text-sm text-slate-200 leading-relaxed font-medium" />
               {email.james_note && (
                 <div className="pt-4 border-t border-white/5">
                    <p className="text-xs text-primary font-bold italic">💡 James: {email.james_note}</p>
