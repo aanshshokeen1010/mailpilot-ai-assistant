@@ -523,8 +523,9 @@ async def get_emails_raw(request: Request, response: Response):
     except AuthRequiredError:
         return {"needs_auth": True}
     except Exception as e:
-        logger.error(f"Error in emails-raw: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch emails")
+        logger.error(f"Critical Failure in /emails: {e}", exc_info=True)
+        # Return the actual error in the detail for faster production debugging
+        raise HTTPException(status_code=500, detail=f"Failed to fetch emails: {str(e)}")
 
 @router.get("/auth-url")
 async def auth_url():
