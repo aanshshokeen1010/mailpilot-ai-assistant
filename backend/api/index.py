@@ -1,17 +1,12 @@
 import os
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+import sys
 
-app = FastAPI()
+# Critical: Inject 'backend' into sys.path so 'app.main' can be imported correctly by Vercel
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
-@app.get("/health")
-def health():
-    return {"status": "survival_boot_ok"}
+from app.main import app
 
-@app.get("/api/health")
-def api_health():
-    return {"status": "survival_boot_ok_via_api"}
-
-@app.get("/")
-def index():
-    return {"message": "MailPilot Survival Mode Active"}
+# This 'app' object is what Vercel will look for to serve the API

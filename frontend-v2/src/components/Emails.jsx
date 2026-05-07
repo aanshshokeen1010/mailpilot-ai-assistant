@@ -269,7 +269,7 @@ export default function Emails({ emails, setEmails, setTasks, showToast, onAuthE
     setFetchingStep('Initiating Bureau Sync...');
 
     try {
-      const rawData = await fetchAPI('/emails-raw');
+      const rawData = await fetchAPI('/emails');
       if (rawData.needs_auth) {
         showToast('error', 'Session Revoked.');
         onAuthExpired?.();
