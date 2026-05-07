@@ -254,12 +254,19 @@ export default function App() {
 
       try {
         const data = await fetchAPI('/health');
-        if (data.status === 'ok') {
+        if (data.authenticated) {
           setIsAuthenticated(true);
-          setUserEmail(data.user_email);
-          setUserPicture(data.user_picture);
-          setUserName(data.user_name);
+          if (data.user_email) setUserEmail(data.user_email);
           
+          // Fetch full profile (name, picture) from user-info endpoint
+          fetchAPI('/user-info').then(info => {
+            if (info && !info.needs_auth) {
+              if (info.email) setUserEmail(info.email);
+              if (info.name) setUserName(info.name);
+              if (info.picture) setUserPicture(info.picture);
+            }
+          }).catch(() => console.warn("Background profile sync skipped."));
+
           // Initial settings sync to local storage
           fetchAPI('/settings').then(settingsData => {
             if (settingsData) {

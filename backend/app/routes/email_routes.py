@@ -498,6 +498,7 @@ async def user_info(request: Request, response: Response):
 # All alignment telemetry is now computed and stored in the frontend localStorage.
 
 @router.get("/emails")
+@router.get("/emails-raw")
 async def get_emails_raw(request: Request, response: Response):
     try:
         from app.services.gmail_service import get_emails

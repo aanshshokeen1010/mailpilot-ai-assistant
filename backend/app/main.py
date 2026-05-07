@@ -48,14 +48,35 @@ app.include_router(email_router, prefix="/api")
 
 def _health_payload(request: Request):
     from app.services.gmail_service import TOKEN_PATH
-    cookie_auth = bool(request.cookies.get("mailpilot_token"))
-    # Vercel serverless instances can keep a stale token file in /tmp. That file
-    # is not tied to the current browser, so only cookies should authenticate
-    # production sessions.
+    cookie_val = request.cookies.get("mailpilot_token")
+    cookie_auth = bool(cookie_val)
     file_auth = False if os.getenv("VERCEL") == "1" else os.path.exists(TOKEN_PATH)
+    
+    authenticated = cookie_auth or file_auth
+    user_email = None
+
+    # Fast path: extract user_email from the signed cookie without any Google API call.
+    # The cookie already caches the email set during login/oauth2callback.
+    if cookie_val:
+        try:
+            import json, base64, hmac, hashlib
+            from app.config.settings import settings as app_settings
+            if '.' in cookie_val:
+                payload, signature = cookie_val.split('.', 1)
+                expected = hmac.new(app_settings.SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+                if hmac.compare_digest(signature, expected):
+                    missing = len(payload) % 4
+                    if missing:
+                        payload += '=' * (4 - missing)
+                    data = json.loads(base64.urlsafe_b64decode(payload).decode())
+                    user_email = data.get('user_email')
+        except:
+            pass
+
     return {
         "status": "ok", 
-        "authenticated": cookie_auth or file_auth, 
+        "authenticated": authenticated, 
+        "user_email": user_email,
         "version": "2.1.1",
         "db_type": "external" if os.getenv("DATABASE_URL") else "local"
     }
