@@ -140,6 +140,11 @@ function EmailDetail({ email, onBack, onAnalyze, analyzing, showToast }) {
           <div className="space-y-1">
              <div className="flex items-center gap-2">
                 <span className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Intelligence Detail</span>
+                {email.engine && (
+                   <div className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-[8px] font-black text-primary uppercase tracking-widest">
+                     Powered by {email.engine}
+                   </div>
+                )}
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
              </div>
              <h3 className="text-xl font-black text-white tracking-tight">{email.subject}</h3>
@@ -307,7 +312,7 @@ function EmailDetail({ email, onBack, onAnalyze, analyzing, showToast }) {
           className="btn-gradient px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest flex items-center gap-2"
         >
           {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-          {email.summary ? 'Refine' : 'Analyze'}
+          {analyzing ? 'Synchronizing...' : email.summary ? 'Refine' : 'Analyze'}
         </button>
       </div>
 
@@ -538,7 +543,11 @@ export default function ProfessionalInbox({ emails = [], analyzeEmail, analyzing
   const catCounts = {};
   emails.forEach(e => {
     const c = e.category || 'STRATEGIC_FYI';
-    catCounts[c] = (catCounts[c] || 0) + 1;
+    if (CATEGORY_STYLES[c]) {
+      catCounts[c] = (catCounts[c] || 0) + 1;
+    } else {
+      catCounts['STRATEGIC_FYI'] = (catCounts['STRATEGIC_FYI'] || 0) + 1;
+    }
   });
 
   const handleAnalyze = async (email) => {

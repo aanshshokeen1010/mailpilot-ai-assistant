@@ -160,7 +160,9 @@ async def chat_with_james_route(req: ChatRequest, request: Request):
         "email_context_loaded": needs_email_context
     }
     
-    reply = await chat_with_james(message[:1000], context)
+    async with AI_SEMAPHORE:
+        await _throttled_ai_call()
+        reply = await chat_with_james(message[:1000], context)
     return {"reply": reply}
 
 @router.post("/morning-brief")
@@ -171,6 +173,7 @@ async def morning_brief_route(req: BriefRequest, request: Request):
     emails = (req.emails or [])[:12]
     from app.services.ai_service import generate_morning_brief
     async with AI_SEMAPHORE:
+        await _throttled_ai_call()
         brief = await asyncio.to_thread(generate_morning_brief, emails, tasks)
     return {"brief": brief}
 
@@ -293,6 +296,7 @@ async def deep_dive_route(req: DeepDiveRequest, request: Request):
     user_email = _get_user_email(request)
     persona = _build_effective_persona(user_email) if user_email else ""
     async with AI_SEMAPHORE:
+        await _throttled_ai_call()
         analysis = await asyncio.to_thread(
             generate_deep_dive,
             req.subject,
@@ -371,8 +375,13 @@ def _build_effective_persona(user_email: str, explicit_persona: Optional[str] = 
 
     return "\n".join(lines)
 
-# Concurrency control for AI processing
-AI_SEMAPHORE = asyncio.Semaphore(10)
+# Concurrency control for AI processing - Hardened for 40 RPM limit
+# Concurrency 2 with a 1.5s delay ensures we stay under ~40-60 RPM even with multiple users
+AI_SEMAPHORE = asyncio.Semaphore(2)
+
+async def _throttled_ai_call():
+    """Ensures a mandatory gap between AI calls to respect RPM limits."""
+    await asyncio.sleep(1.5)
 
 # ─── Cookie Auth Helpers ───
 
@@ -432,6 +441,7 @@ async def run_analysis_background(req: AnalyzeRequest, user_email: str, cookie: 
     
     try:
         async with AI_SEMAPHORE:
+            await _throttled_ai_call()
             context = f"Subject: {req.subject}\nSender: {req.sender}\n\nBody:\n{req.snippet}"[:4000]
             # 10-Shot Feedback Learning
             pos_examples, neg_examples = await asyncio.to_thread(get_feedback_examples, user_email, 5) if user_email else ([], [])
@@ -661,6 +671,7 @@ COO, give me the master plan to execute this.
     
     try:
         async with AI_SEMAPHORE:
+            await _throttled_ai_call()
             roadmap = await asyncio.get_event_loop().run_in_executor(
                 None, generate_ai_response, prompt, COO_SYSTEM_PROMPT, 0.2, 1000, "COO"
             )
@@ -843,14 +854,16 @@ async def generate_reply_route(req: ReplyRequest, request: Request):
     from app.services.task_store import get_style_examples
     style_examples = get_style_examples(user_email, 5)
     
-    reply = await asyncio.to_thread(
-        generate_reply,
-        req.content,
-        tone=tone,
-        user_identifier=user_email,
-        user_details=details,
-        style_examples=style_examples
-    )
+    async with AI_SEMAPHORE:
+        await _throttled_ai_call()
+        reply = await asyncio.to_thread(
+            generate_reply,
+            req.content,
+            tone=tone,
+            user_identifier=user_email,
+            user_details=details,
+            style_examples=style_examples
+        )
     return {"reply": reply}
 
 @router.post("/send-email")
