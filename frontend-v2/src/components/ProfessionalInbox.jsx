@@ -287,7 +287,10 @@ function EmailDetail({ email, onBack, onAnalyze, analyzing, showToast }) {
         </div>
       </div>
     </motion.div>
-  function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) {
+  );
+}
+
+function EmailPreviewPanel({ email, onAnalyze, analyzing, showToast, onClose }) {
   const sender = parseSender(email.sender);
   const isCritical = email.category === 'CRITICAL_ACTION';
 
